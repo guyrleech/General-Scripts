@@ -6,6 +6,7 @@
 
     Modification History:
 
+    26/11/18  GRL   Put '<Folder>' in results when item is a folder as cannot checksum a folder, only files
 #>
 
 [string]$mainwindowXAML = @'
@@ -110,7 +111,14 @@ if( $mainForm.ShowDialog() )
         [string]$result = `
             try
             {
-                 Get-FileHash -Path $_ -Algorithm $algorithm -ErrorAction Stop | Select -ExpandProperty Hash
+                if( Test-Path -Path $_ -PathType Container -ErrorAction SilentlyContinue )
+                {
+                    '<Folder>'
+                }
+                else
+                {
+                    Get-FileHash -Path $_ -Algorithm $algorithm -ErrorAction Stop | Select -ExpandProperty Hash
+                }
             }
             catch
             {
