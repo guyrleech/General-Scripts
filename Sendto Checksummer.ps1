@@ -7,6 +7,8 @@
     Modification History:
 
     26/11/18  GRL   Put '<Folder>' in results when item is a folder as cannot checksum a folder, only files
+
+    05/12/18  GRL   Don't show GUI if environment variable CHECKSUM_ALGORITHM is set as it uses that as the checksum algorithm
 #>
 
 [string]$mainwindowXAML = @'
@@ -73,39 +75,47 @@ if( ! $args -or ! $args.Count )
     Throw $errorMessage
 }
 
-$null = [void][Reflection.Assembly]::LoadWithPartialName('Presentationframework')
+[string]$algorithm = $env:CHECKSUM_ALGORITHM
 
-$mainForm = Load-GUI $mainwindowXAML
-
-if( ! $mainForm )
+if( [string]::IsNullOrEmpty( $algorithm ) )
 {
-    return
-}
+    $null = [void][Reflection.Assembly]::LoadWithPartialName('Presentationframework')
 
-if( $DebugPreference -eq 'Inquire' )
-{
-    Get-Variable -Name WPF*
-}
-## set up call backs
+    $mainForm = Load-GUI $mainwindowXAML
 
-$WPFbtnOk.add_Click({
-    $_.Handled = $true
-    $mainForm.DialogResult = $true
-    $mainForm.Close()
-})
-
-$mainForm.add_Loaded({
-    if( $_.Source.WindowState -eq 'Minimized' )
+    if( ! $mainForm )
     {
-        $_.Source.WindowState = 'Normal'
+        return
     }
-    $_.Handled = $true
-})
 
-if( $mainForm.ShowDialog() )
+    if( $DebugPreference -eq 'Inquire' )
+    {
+        Get-Variable -Name WPF*
+    }
+    ## set up call backs
+
+    $WPFbtnOk.add_Click({
+        $_.Handled = $true
+        $mainForm.DialogResult = $true
+        $mainForm.Close()
+    })
+
+    $mainForm.add_Loaded({
+        if( $_.Source.WindowState -eq 'Minimized' )
+        {
+            $_.Source.WindowState = 'Normal'
+        }
+        $_.Handled = $true
+    })
+
+    if( $mainForm.ShowDialog() )
+    {
+        $algorithm = $WPFcomboAlgorithm.SelectedItem.Content
+    }
+}
+
+if( ! [string]::IsNullOrEmpty( $algorithm ) )
 {
-    $algorithm = $WPFcomboAlgorithm.SelectedItem.Content
-
     [array]$results = @( $args | ForEach-Object `
     {
         [string]$result = `
