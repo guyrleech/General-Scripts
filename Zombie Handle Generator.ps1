@@ -3,6 +3,10 @@
     Open a given number of handles to a process. Used to test Zombie process detection where the process has exited whilst this script's handles are still open
 
     @guyrleech 2018
+
+    Modification History:
+
+    18/01/19  GRL  Threads added
 #>
 
 <#
@@ -14,6 +18,10 @@ Can be used to test leak detection tools.
 .PARAMETER pids
 
 A comma separated list of process ids to open handles for.
+
+.PARAMETER threads
+
+Open handles to threads in the specified process rather than to processes
 
 .PARAMETER numberOfHandles
 
@@ -27,7 +35,11 @@ The number of seconds to wait after opening all handles before closing them. If 
 
 & '.\Zombie Handle Generator.ps1' -pids 1234,5678 -numberOfHandles 100
 
-Opens 100 handles onto the processes with process ids of 1234 and 5678 and waits for the user to hit the enter key before closing all of the handles.
+Opens 100 process handles each onto the processes with process ids of 1234 and 5678 and waits for the user to hit the enter key before closing all of the handles.
+
+& '.\Zombie Handle Generator.ps1' -pids 1234,5678 -numberOfHandles 42 -threads -seconds 300
+
+Opens 42 thread handles onto the threads in the processes with process ids of 1234 and 5678 and waits for 300 seconds before closing all of the handles.
 
 #>
 
@@ -37,6 +49,7 @@ Param
 (
     [Parameter(Mandatory=$true)]
     [int[]]$pids ,
+    [switch]$threads ,
     [int]$numberOfHandles = 1 ,
     [int]$seconds 
 )
@@ -52,26 +65,55 @@ namespace PInvoke.Win32
     {    
      [DllImport( "kernel32.dll",SetLastError = true )]
         public static extern IntPtr OpenProcess( UInt32 dwDesiredAccess, bool bInheritHandle, UInt32 dwProcessId );
+
+     [DllImport( "kernel32.dll",SetLastError = true )]
+        public static extern IntPtr OpenThread( UInt32 dwDesiredAccess, bool bInheritHandle, UInt32 dwThreadId );
+
      [DllImport( "kernel32.dll",SetLastError = true )]
         public static extern bool CloseHandle( IntPtr hObject );
 
-     public enum Access
+     public enum ProcessAccess
      {
         PROCESS_QUERY_INFORMATION = 0x0400 ,
         PROCESS_QUERY_LIMITED_INFORMATION = 0x1000,
+     };
+     public enum ThreadAccess
+     {
+        THREAD_QUERY_INFORMATION = 0x40 ,
+        THREAD_QUERY_LIMITED_INFORMATION = 0x800,
      };
     }
 }
 "@
 
 [hashtable]$processInfo = @{} 
+[string]$objectType = if( $threads ) { 'thread' } else { 'process' }
+[string]$objectTypePlural = if( $threads ) { 'threads' } else { 'processes' }
 
 [array]$processHandles = @( Get-Process -Id $pids | Where-Object { $_.Id } | ForEach-Object `
 {
     $process = $_
+    [int]$threadIndex = 0
+    [int]$objectId = -1
     1..$numberOfHandles | ForEach-Object `
     {
-        [long]$handle = [Pinvoke.Win32.Process]::OpenProcess(  [Pinvoke.Win32.Process+Access]::PROCESS_QUERY_LIMITED_INFORMATION , $false ,$process.Id )
+        [long]$handle = $null
+        if( $threads )
+        {
+            if( $threadIndex -ge $process.Threads.Count )
+            {
+                $threadIndex = 0
+            }
+            $objectId = $process.Threads[ $threadIndex ].Id 
+            $handle = [Pinvoke.Win32.Process]::OpenThread(  [Pinvoke.Win32.Process+ThreadAccess]::THREAD_QUERY_LIMITED_INFORMATION , $false , $objectId );$LastError = [ComponentModel.Win32Exception][Runtime.InteropServices.Marshal]::GetLastWin32Error()
+            $threadIndex++
+        }
+        else
+        {
+            $objectId = $process.Id
+            $handle = [Pinvoke.Win32.Process]::OpenProcess(  [Pinvoke.Win32.Process+ProcessAccess]::PROCESS_QUERY_LIMITED_INFORMATION , $false , $objectId );$LastError = [ComponentModel.Win32Exception][Runtime.InteropServices.Marshal]::GetLastWin32Error()
+        }
+       
         if( $handle )
         {
             $handle
@@ -79,15 +121,15 @@ namespace PInvoke.Win32
         }
         else
         {
-            $LastError = [ComponentModel.Win32Exception][Runtime.InteropServices.Marshal]::GetLastWin32Error()
-            Write-Warning "Unable to open handle for $($process.ProcessName) ($($process.id)) - $LastError"
+            
+            Write-Warning "Unable to open handle for $objectType $objectId $($process.ProcessName) - $LastError"
         }
     }
 } )
 
 if( $processHandles -and $processHandles.Count )
 {
-    Write-Output "$(Get-Date -Format G): got $($processHandles.Count) handles to $($pids.Count) processes"
+    Write-Output "$(Get-Date -Format G): got $($processHandles.Count) handles to $($pids.Count) $objectTypePlural in process $pid"
 
     if( $PSBoundParameters[ 'seconds' ] )
     {
