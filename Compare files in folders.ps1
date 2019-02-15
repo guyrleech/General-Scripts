@@ -5,6 +5,10 @@
     If using a gridview for output, text files selected in that will then be differenced into separate grid views
 
     @guyrleech 2019
+
+    Modification History:
+
+    15/02/19  GRL  Added size difference column
 #>
 
 <#
@@ -175,9 +179,10 @@ if( $recurse )
                 'Type' = [System.IO.Path]::GetExtension( $file1.FullName ) -replace '^\.' , ''
                 'File1 Version' = ( $file1 | Select -ExpandProperty VersionInfo | Select -ExpandProperty FileVersion ) ##$(if( $file1.PSObject.properties[ 'VersionInfo' ] ) { $file1.VersionInfo | Select -ExpandProperty FileVersion })
                 'File1 modification time' = $file1.LastWriteTime
-                'File1 size' = $file1.Length
+                'File1 size' = [int]$file1.Length
+                'Size Difference' = [int]($file1.Length - ($file2 | Select -ExpandProperty Length))
                 'File2 Version' = ( $file2 | Select -ExpandProperty VersionInfo | Select -ExpandProperty FileVersion ) #$(if( $file2 -and $file2.PSObject.properties[ 'VersionInfo' ] ) { $file2.VersionInfo | Select -ExpandProperty FileVersion })
-                'File2 size' = ( $file2 | Select -ExpandProperty Length)
+                'File2 size' = [int]( $file2 | Select -ExpandProperty Length)
                 'File2 modification time' = ($file2 | Select -ExpandProperty LastWriteTime)
                 'Same Version' = $sameVersion
                 'Same size' = $sameSize
