@@ -3,6 +3,12 @@
     Examine files to see what type they really are
 
     @guyrleech 2019
+
+    Modification History:
+
+    17/03/19  GRL Added new file types
+    18/03/19  GRL Updated msi definition and added doc as are only different at byte 26
+                  Added ace file definition
 #>
 
 <#
@@ -103,7 +109,10 @@ Param
 
 ## a great resource for information on headers of files can be found at http://file-extension.net/seeker/
 
-[array]$magicNumbers = @(
+[array]$magicNumbers = @(    
+    [pscustomobject]@{ 'Type' = 'ace'   ; 'Offset' = 7 ; 'Bytes' = @( 0x2A , 0x2A , 0x41, 0x43 , 0x45 , 0x2A , 0x2A) }
+    [pscustomobject]@{ 'Type' = 'msi'   ; 'Offset' = 0 ; 'Bytes' = @( 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3E, 0x00, 0x04, 0x00 )}
+    [pscustomobject]@{ 'Type' = 'doc'   ; 'Offset' = 0 ; 'Bytes' = @( 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3E, 0x00, 0x03, 0x00 )}
     [pscustomobject]@{ 'Type' = 'pkzip' ; 'Offset' = 0 ; 'Bytes' = @( 0x50 , 0x4B , 0x03 , 0x04 ) }
     [pscustomobject]@{ 'Type' = 'exe'   ; 'Offset' = 0 ; 'Bytes' = @( 0x4D , 0x5A ) }
     [pscustomobject]@{ 'Type' = 'jpg'   ; 'Offset' = 6 ; 'Bytes' = @( 0x4A , 0x46 , 0x49 , 0x46 ) }
@@ -124,11 +133,11 @@ Param
     [pscustomobject]@{ 'Type' = 'cab'   ; 'Offset' = 0 ; 'Bytes' = @( 0x49, 0x53, 0x63, 0x28 ) }
     [pscustomobject]@{ 'Type' = 'tif'   ; 'Offset' = 0 ; 'Bytes' = @( 0x49, 0x49, 0x2A, 0x00 ) }
     [pscustomobject]@{ 'Type' = 'tif'   ; 'Offset' = 0 ; 'Bytes' = @( 0x4D, 0x4D, 0x00 ) }
+    [pscustomobject]@{ 'Type' = 'evtx'  ; 'Offset' = 0 ; 'Bytes' = @( 0x45 , 0x6C , 0x66 , 0x46 , 0x69 , 0x6C , 0x65 , 0x00  ) }
     [pscustomobject]@{ 'Type' = 'cab'   ; 'Offset' = 0 ; 'Bytes' = @( 0x4D, 0x53, 0x43, 0x46, 0x00, 0x00, 0x00, 0x00 ) }
     [pscustomobject]@{ 'Type' = 'wim'   ; 'Offset' = 0 ; 'Bytes' = @( 0x4D , 0x53 , 0x57 , 0x49 , 0x4D ) }
     [pscustomobject]@{ 'Type' = 'mkv'   ; 'Offset' = 0 ; 'Bytes' = @( 0x1A , 0x45 , 0xDF , 0xA3 ) }
-    [pscustomobject]@{ 'Type' = 'wmv/wma'   ; 'Offset' = 0 ; 'Bytes' = @( 0x30, 0x26, 0xB2, 0x75, 0x8E, 0x66, 0xCF, 0x11, 0xA6, 0xD9, 0x00, 0xAA, 0x00 ) }
-    [pscustomobject]@{ 'Type' = 'msi'   ; 'Offset' = 0 ; 'Bytes' = @( 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1 )}
+    [pscustomobject]@{ 'Type' = 'wmv/wma'   ; 'Offset' = 0 ; 'Bytes' = @( 0x30, 0x26, 0xB2, 0x75, 0x8E, 0x66, 0xCF, 0x11, 0xA6, 0xD9, 0x00, 0xAA, 0x00 ) }    
     [pscustomobject]@{ 'Type' = 'vhdx'   ; 'Offset' = 0 ; 'Bytes' = @( 0x76, 0x68, 0x64, 0x78, 0x66, 0x69, 0x6C, 0x65 )}
     [pscustomobject]@{ 'Type' = 'vhd'   ; 'Offset' = 0 ; 'Bytes' = @( 0x63, 0x6F, 0x6E, 0x65, 0x63, 0x74, 0x69, 0x78 )}
     ## uncomment and use with verbose to show hex bytes found for each file to help analyse file
@@ -170,7 +179,7 @@ Function Get-FileType
                     break
                 }
             }
-            if( $match -and $index -lt $bytes.Count )
+            if( $match -and $index -le $bytes.Count )
             {
                 if( ! $types -or $magicNumber.Type -match $types )
                 {
