@@ -9,6 +9,7 @@
     17/03/19  GRL Added new file types
     18/03/19  GRL Updated msi definition and added doc as are only different at byte 26
                   Added ace file definition
+                  Added extra property to show when file extension does not match actual type
 #>
 
 <#
@@ -57,6 +58,10 @@ Only include files which contain files in NTFS alternate data streams
 
 Display a summary with the count of each file type, sorted by the most prevalent
 
+.PARAMETER mismatched
+
+Only output files where the file type discovered does not match the extension of the file
+
 .EXAMPLE
 
 & '.\Find file type.ps1' -list
@@ -87,6 +92,12 @@ Only analyse files in c:\stuff, and subfolders, with alternate data streams.
 
 Analyse all files in c:\stuff including subfolders and produce a summary of the file types which match 'zip' such as "pkzip" or "7zip" or 'rar'
 
+.EXAMPLE
+
+& '.\Find file type.ps1' -folders c:\stuff -recurse -mismtached
+
+Analyse all files in c:\stuff including subfolders and output those file names where the file extension does not match the discovered file type
+
 #>
 
 [CmdletBinding()]
@@ -104,42 +115,43 @@ Param
     [switch]$others ,
     [switch]$adfs ,
     [switch]$onlyAdfs ,
-    [switch]$summary
+    [switch]$summary ,
+    [switch]$mismatched
 )
 
 ## a great resource for information on headers of files can be found at http://file-extension.net/seeker/
 
 [array]$magicNumbers = @(    
-    [pscustomobject]@{ 'Type' = 'ace'   ; 'Offset' = 7 ; 'Bytes' = @( 0x2A , 0x2A , 0x41, 0x43 , 0x45 , 0x2A , 0x2A) }
-    [pscustomobject]@{ 'Type' = 'msi'   ; 'Offset' = 0 ; 'Bytes' = @( 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3E, 0x00, 0x04, 0x00 )}
-    [pscustomobject]@{ 'Type' = 'doc'   ; 'Offset' = 0 ; 'Bytes' = @( 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3E, 0x00, 0x03, 0x00 )}
-    [pscustomobject]@{ 'Type' = 'pkzip' ; 'Offset' = 0 ; 'Bytes' = @( 0x50 , 0x4B , 0x03 , 0x04 ) }
-    [pscustomobject]@{ 'Type' = 'exe'   ; 'Offset' = 0 ; 'Bytes' = @( 0x4D , 0x5A ) }
-    [pscustomobject]@{ 'Type' = 'jpg'   ; 'Offset' = 6 ; 'Bytes' = @( 0x4A , 0x46 , 0x49 , 0x46 ) }
-    [pscustomobject]@{ 'Type' = 'jpg'   ; 'Offset' = 6 ; 'Bytes' = @( 0x45 , 0x78 , 0x69 , 0x66 ) }
-    [pscustomobject]@{ 'Type' = 'jpg'   ; 'Offset' = 6 ; 'Bytes' = @( 0xFF , 0xD8 , 0xFF ) }
-    [pscustomobject]@{ 'Type' = 'pdf'   ; 'Offset' = 0 ; 'Bytes' = @( 0x25 , 0x50 , 0x44 , 0x46 , 0x2D) }
-    [pscustomobject]@{ 'Type' = 'png'   ; 'Offset' = 0 ; 'Bytes' = @( 0x89 , 0x50 , 0x4e , 0x47 ) }
-    [pscustomobject]@{ 'Type' = 'mp4'   ; 'Offset' = 4 ; 'Bytes' = @( 0x66 , 0x74 , 0x79 , 0x70 , 0x6D ) }
-    [pscustomobject]@{ 'Type' = 'mp4'   ; 'Offset' = 4 ; 'Bytes' = @( 0x66 , 0x74 , 0x79 , 0x70 , 0x69 ) }
-    [pscustomobject]@{ 'Type' = 'bmp'   ; 'Offset' = 0 ; 'Bytes' = @( 0x42 , 0x4d ) }
-    [pscustomobject]@{ 'Type' = 'gif'   ; 'Offset' = 0 ; 'Bytes' = @( 0x47 , 0x49 , 0x46 ) }
-    [pscustomobject]@{ 'Type' = 'wav'   ; 'Offset' = 8 ; 'Bytes' = @( 0x57 , 0x41 , 0x56 , 0x45 ) }
-    [pscustomobject]@{ 'Type' = 'avi'   ; 'Offset' = 8 ; 'Bytes' = @( 0x41 , 0x56 , 0x49 ) }
-    [pscustomobject]@{ 'Type' = 'gif'   ; 'Offset' = 0 ; 'Bytes' = @( 0x52 , 0x61 , 0x72 , 0x21 , 0x1A , 0x07 , 0x00 ) }
-    [pscustomobject]@{ 'Type' = 'gzip'  ; 'Offset' = 0 ; 'Bytes' = @( 0x1f , 0x8B ) }
-    [pscustomobject]@{ 'Type' = '7zip'  ; 'Offset' = 0 ; 'Bytes' = @( 0x37 , 0x7A ) }
-    [pscustomobject]@{ 'Type' = 'rar'   ; 'Offset' = 0 ; 'Bytes' = @( 0x52, 0x61, 0x72, 0x21, 0x1A ) }
-    [pscustomobject]@{ 'Type' = 'cab'   ; 'Offset' = 0 ; 'Bytes' = @( 0x49, 0x53, 0x63, 0x28 ) }
-    [pscustomobject]@{ 'Type' = 'tif'   ; 'Offset' = 0 ; 'Bytes' = @( 0x49, 0x49, 0x2A, 0x00 ) }
-    [pscustomobject]@{ 'Type' = 'tif'   ; 'Offset' = 0 ; 'Bytes' = @( 0x4D, 0x4D, 0x00 ) }
-    [pscustomobject]@{ 'Type' = 'evtx'  ; 'Offset' = 0 ; 'Bytes' = @( 0x45 , 0x6C , 0x66 , 0x46 , 0x69 , 0x6C , 0x65 , 0x00  ) }
-    [pscustomobject]@{ 'Type' = 'cab'   ; 'Offset' = 0 ; 'Bytes' = @( 0x4D, 0x53, 0x43, 0x46, 0x00, 0x00, 0x00, 0x00 ) }
-    [pscustomobject]@{ 'Type' = 'wim'   ; 'Offset' = 0 ; 'Bytes' = @( 0x4D , 0x53 , 0x57 , 0x49 , 0x4D ) }
-    [pscustomobject]@{ 'Type' = 'mkv'   ; 'Offset' = 0 ; 'Bytes' = @( 0x1A , 0x45 , 0xDF , 0xA3 ) }
-    [pscustomobject]@{ 'Type' = 'wmv/wma'   ; 'Offset' = 0 ; 'Bytes' = @( 0x30, 0x26, 0xB2, 0x75, 0x8E, 0x66, 0xCF, 0x11, 0xA6, 0xD9, 0x00, 0xAA, 0x00 ) }    
-    [pscustomobject]@{ 'Type' = 'vhdx'   ; 'Offset' = 0 ; 'Bytes' = @( 0x76, 0x68, 0x64, 0x78, 0x66, 0x69, 0x6C, 0x65 )}
-    [pscustomobject]@{ 'Type' = 'vhd'   ; 'Offset' = 0 ; 'Bytes' = @( 0x63, 0x6F, 0x6E, 0x65, 0x63, 0x74, 0x69, 0x78 )}
+    [pscustomobject]@{ 'Type' = 'ace'   ; 'Offset' = 7 ; 'Extensions' = @( 'ace' ) ; 'Bytes' = @( 0x2A , 0x2A , 0x41, 0x43 , 0x45 , 0x2A , 0x2A) }
+    [pscustomobject]@{ 'Type' = 'msi/msp'   ; 'Offset' = 0 ; 'Extensions' = @( 'msi' , 'msp' ) ; 'Bytes' = @( 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3E, 0x00, 0x04, 0x00 )}
+    [pscustomobject]@{ 'Type' = 'doc'   ; 'Offset' = 0 ; 'Extensions' = @( 'doc' ) ; 'Bytes' = @( 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3E, 0x00, 0x03, 0x00 )}
+    [pscustomobject]@{ 'Type' = 'zip'   ; 'Offset' = 0 ; 'Extensions' = @( 'zip' , 'jar' ) ; 'Bytes' = @( 0x50 , 0x4B , 0x03 , 0x04 ) }
+    [pscustomobject]@{ 'Type' = 'exe'   ; 'Offset' = 0 ; 'Extensions' = @( 'exe' , 'dll' , 'ocx' , 'cpl' , 'scr' , 'mui' ) ; 'Bytes' = @( 0x4D , 0x5A ) }
+    [pscustomobject]@{ 'Type' = 'jpg'   ; 'Offset' = 6 ; 'Extensions' = @( 'jpg' , 'jpeg' , 'jpg_large' ) ; 'Bytes' = @( 0x4A , 0x46 , 0x49 , 0x46 ) }
+    [pscustomobject]@{ 'Type' = 'jpg'   ; 'Offset' = 6 ; 'Extensions' = @( 'jpg' , 'jpeg' , 'jpg_large' ) ; 'Bytes' = @( 0x45 , 0x78 , 0x69 , 0x66 ) }
+    [pscustomobject]@{ 'Type' = 'jpg'   ; 'Offset' = 6 ; 'Extensions' = @( 'jpg' , 'jpeg' , 'jpg_large' ) ; 'Bytes' = @( 0xFF , 0xD8 , 0xFF ) }
+    [pscustomobject]@{ 'Type' = 'pdf'   ; 'Offset' = 0 ; 'Extensions' = @( 'pdf' ) ; 'Bytes' = @( 0x25 , 0x50 , 0x44 , 0x46 , 0x2D) }
+    [pscustomobject]@{ 'Type' = 'png'   ; 'Offset' = 0 ; 'Extensions' = @( 'png' ) ; 'Bytes' = @( 0x89 , 0x50 , 0x4e , 0x47 ) }
+    [pscustomobject]@{ 'Type' = 'mp4'   ; 'Offset' = 4 ; 'Extensions' = @( 'mp4' ) ; 'Bytes' = @( 0x66 , 0x74 , 0x79 , 0x70 , 0x6D ) }
+    [pscustomobject]@{ 'Type' = 'mp4'   ; 'Offset' = 4 ; 'Extensions' = @( 'mp4' ) ; 'Bytes' = @( 0x66 , 0x74 , 0x79 , 0x70 , 0x69 ) }
+    [pscustomobject]@{ 'Type' = 'bmp'   ; 'Offset' = 0 ; 'Extensions' = @( 'bmp' ) ; 'Bytes' = @( 0x42 , 0x4d ) }
+    [pscustomobject]@{ 'Type' = 'gif'   ; 'Offset' = 0 ; 'Extensions' = @( 'gif' ) ; 'Bytes' = @( 0x47 , 0x49 , 0x46 ) }
+    [pscustomobject]@{ 'Type' = 'wav'   ; 'Offset' = 8 ; 'Extensions' = @( 'wav' ) ; 'Bytes' = @( 0x57 , 0x41 , 0x56 , 0x45 ) }
+    [pscustomobject]@{ 'Type' = 'avi'   ; 'Offset' = 8 ; 'Extensions' = @( 'avi' ) ; 'Bytes' = @( 0x41 , 0x56 , 0x49 ) }
+    [pscustomobject]@{ 'Type' = 'gif'   ; 'Offset' = 0 ; 'Extensions' = @( 'gif' ) ; 'Bytes' = @( 0x52 , 0x61 , 0x72 , 0x21 , 0x1A , 0x07 , 0x00 ) }
+    [pscustomobject]@{ 'Type' = 'gzip'  ; 'Offset' = 0 ; 'Extensions' = @( 'gz' , 'gzip' ) ; 'Bytes' = @( 0x1f , 0x8B ) }
+    [pscustomobject]@{ 'Type' = '7zip'  ; 'Offset' = 0 ; 'Extensions' = @( '7z' ) ; 'Bytes' = @( 0x37 , 0x7A ) }
+    [pscustomobject]@{ 'Type' = 'rar'   ; 'Offset' = 0 ; 'Extensions' = @( 'rar' ) ; 'Bytes' = @( 0x52, 0x61, 0x72, 0x21, 0x1A ) }
+    [pscustomobject]@{ 'Type' = 'cab'   ; 'Offset' = 0 ; 'Extensions' = @( 'cab' ) ; 'Bytes' = @( 0x49, 0x53, 0x63, 0x28 ) }
+    [pscustomobject]@{ 'Type' = 'tif'   ; 'Offset' = 0 ; 'Extensions' = @( 'tiff' , 'tif'  ) ; 'Bytes' = @( 0x49, 0x49, 0x2A, 0x00 ) }
+    [pscustomobject]@{ 'Type' = 'tif'   ; 'Offset' = 0 ; 'Extensions' = @( 'tiff' , 'tif' ) ; 'Bytes' = @( 0x4D, 0x4D, 0x00 ) }
+    [pscustomobject]@{ 'Type' = 'evtx'  ; 'Offset' = 0 ; 'Extensions' = @( 'evtx' ) ; 'Bytes' = @( 0x45 , 0x6C , 0x66 , 0x46 , 0x69 , 0x6C , 0x65 , 0x00  ) }
+    [pscustomobject]@{ 'Type' = 'cab'   ; 'Offset' = 0 ; 'Extensions' = @( 'cab' ) ; 'Bytes' = @( 0x4D, 0x53, 0x43, 0x46, 0x00, 0x00, 0x00, 0x00 ) }
+    [pscustomobject]@{ 'Type' = 'wim'   ; 'Offset' = 0 ; 'Extensions' = @( 'wim' ) ; 'Bytes' = @( 0x4D , 0x53 , 0x57 , 0x49 , 0x4D ) }
+    [pscustomobject]@{ 'Type' = 'mkv'   ; 'Offset' = 0 ; 'Extensions' = @( 'mkv' ) ; 'Bytes' = @( 0x1A , 0x45 , 0xDF , 0xA3 ) }
+    [pscustomobject]@{ 'Type' = 'wmv/wma'   ; 'Offset' = 0 ; 'Extensions' = @( 'wmv' , 'wma' ) ; 'Bytes' = @( 0x30, 0x26, 0xB2, 0x75, 0x8E, 0x66, 0xCF, 0x11, 0xA6, 0xD9, 0x00, 0xAA, 0x00 ) }    
+    [pscustomobject]@{ 'Type' = 'vhdx'   ; 'Offset' = 0 ; 'Extensions' = @( 'vhdx' ) ; 'Bytes' = @( 0x76, 0x68, 0x64, 0x78, 0x66, 0x69, 0x6C, 0x65 )}
+    [pscustomobject]@{ 'Type' = 'vhd'   ; 'Offset' = 0 ; 'Extensions' = @( 'vhd' ) ; 'Bytes' = @( 0x63, 0x6F, 0x6E, 0x65, 0x63, 0x74, 0x69, 0x78 )}
     ## uncomment and use with verbose to show hex bytes found for each file to help analyse file
     ##[pscustomobject]@{ 'Type' = 'dummy' ; 'Offset' = 32 ; 'Bytes' = @( 0xDE , 0xAD , 0xBF , 0xBE ) }
 )
@@ -154,6 +166,7 @@ Function Get-FileType
         [AllowNull()]
         [string]$types ,
         [long]$length ,
+        [switch]$mismatched ,
         [int]$maxHeaderLength ### including offset
     )
     
@@ -183,7 +196,12 @@ Function Get-FileType
             {
                 if( ! $types -or $magicNumber.Type -match $types )
                 {
-                    [pscustomobject]@{ 'File' = $file ; 'Type' = $magicNumber.Type ; 'Extension' = [System.IO.Path]::GetExtension( $file ) ; 'Size (KB)' = [int]( $length / 1KB )}
+                    [string]$extension = [System.IO.Path]::GetExtension( $file ) -replace '^\.' , ''
+                    [bool]$mismatch = ( $extension -notin $magicNumber.Extensions )
+                    if( ! $mismatched -or $mismatch )
+                    {
+                        [pscustomobject]@{ 'File' = $file ; 'Type' = $magicNumber.Type ; 'Extension' = $extension ; 'Size (KB)' = [int]( $length / 1KB ) ; 'Mismatch' = $(if ( $mismatch ) { 'Yes' } else { 'No' } )}
+                    }
                 }
                 ## else not interested in this type
                 $matched = $true
@@ -192,7 +210,7 @@ Function Get-FileType
         }
         if( ! $matched -and $others )
         {
-            [pscustomobject]@{ 'File' = $file ; 'Type' = $null ; 'Extension' = [System.IO.Path]::GetExtension( $file ) ; 'Size (KB)' =  [int]( $length / 1KB )}
+            [pscustomobject]@{ 'File' = $file ; 'Type' = $null ; 'Extension' = [System.IO.Path]::GetExtension( $file ) ; 'Size (KB)' =  [int]( $length / 1KB ) ; 'Mismatch' = 'No'}
         }
     }
     elseif( $fileError )
@@ -204,6 +222,11 @@ Function Get-FileType
 if( $onlyAdfs )
 {
     $adfs = $true
+}
+
+if( $others -and $mismatched )
+{
+    Write-Error 'Cannot output mismatched only when reporting on unmatched (other) files'
 }
 
 [int]$maxHeaderLength = 0
@@ -235,7 +258,7 @@ else
         {
             if( ! $onlyAdfs )
             {
-                Get-FileType -file $_.FullName -maxHeaderLength $maxHeaderLength -type $types -length $_.Length
+                Get-FileType -file $_.FullName -maxHeaderLength $maxHeaderLength -type $types -length $_.Length -mismatched:$mismatched
             }
             if( $adfs )
             {
@@ -252,7 +275,7 @@ else
                             $item = Get-Item -LiteralPath $streamPath
                             if( $item )
                             {
-                                Get-FileType -file $streamPath -maxHeaderLength $maxHeaderLength -type $types -Length $item.Length
+                                Get-FileType -file $streamPath -maxHeaderLength $maxHeaderLength -type $types -Length $item.Length -mismatched:$mismatched
                             }
                         }
                     }
@@ -271,7 +294,7 @@ else
             $item = Get-Item -LiteralPath $file
             if( $item )
             {
-                Get-FileType -file $file -maxHeaderLength $maxHeaderLength -type $types -length $item.Length
+                Get-FileType -file $file -maxHeaderLength $maxHeaderLength -type $types -length $item.Length -mismatched:$mismatched
             }
         }
     })
