@@ -40,6 +40,7 @@ Display a stopwatch in a window and start it immediately
     Modification History:
 
     @guyrleech 14/05/2020  Initial release
+                           Rewrote to use WPF DispatcherTimer rather than runspaces
 #>
 
 [CmdletBinding()]
@@ -53,18 +54,8 @@ Param
 
 [int]$exitCode = 0
 
-## code from TTYE
-$newRunspace =[runspacefactory]::CreateRunspace()
-$newRunspace.ApartmentState = "STA"
-#$newRunspace.ThreadOptions = "ReuseThread"         
-$newRunspace.Open()
-$syncHash = [hashtable]::Synchronized(@{})
-$newRunspace.SessionStateProxy.SetVariable( 'syncHash' , $syncHash )
 
-$powerShellScript = [PowerShell]::Create().AddScript({
-    try
-    {
-        [string]$mainwindowXAML = @'
+[string]$mainwindowXAML = @'
 <Window x:Class="Timer.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -72,205 +63,150 @@ $powerShellScript = [PowerShell]::Create().AddScript({
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:Timer"
         mc:Ignorable="d"
-        Title="Guy's Clock" Height="224.694" Width="373.265">
+        Title="Guy's Clock" Height="225.194" Width="404.265">
     <Grid>
-        <TextBox x:Name="txtClock" HorizontalAlignment="Left" Height="126" Margin="24,29,0,0" TextWrapping="Wrap" Text="TextBox" VerticalAlignment="Top" Width="325" FontSize="72" IsReadOnly="True" FontWeight="Bold" BorderThickness="0"/>
+        <TextBox x:Name="txtClock" HorizontalAlignment="Left" Height="126" Margin="24,29,0,0" TextWrapping="Wrap" Text="TextBox" VerticalAlignment="Top" Width="358" FontSize="72" IsReadOnly="True" FontWeight="Bold" BorderThickness="0"/>
         <CheckBox x:Name="checkboxRun" Content="Run" HorizontalAlignment="Left" Height="18" Margin="24,160,0,0" VerticalAlignment="Top" Width="151" IsChecked="True"/>
-        <Button x:Name="btnReset" Content="Reset" HorizontalAlignment="Left" Height="23" Margin="156,155,0,0" VerticalAlignment="Top" Width="147"/>
-
+        <Button x:Name="btnReset" Content="Reset" HorizontalAlignment="Left" Height="23" Margin="162,155,0,0" VerticalAlignment="Top" Width="147"/>
     </Grid>
 </Window>
 '@
-        Function Load-GUI
-        {
-            Param
-            (
-                [Parameter(Mandatory=$true)]
-                $inputXaml
-            )
 
-            $form = $null
-            $inputXML = $inputXaml -replace 'mc:Ignorable="d"' , '' -replace 'x:N' ,'N'  -replace '^<Win.*' , '<Window'
- 
-            [xml]$xaml = $inputXML
-
-            if( $xaml )
-            {
-                $reader = New-Object -TypeName Xml.XmlNodeReader -ArgumentList $xaml
-
-                try
-                {
-                    $form = [Windows.Markup.XamlReader]::Load( $reader )
-                }
-                catch
-                {
-                    Throw "Unable to load Windows.Markup.XamlReader. Double-check syntax and ensure .NET is installed.`n$_"
-                }
- 
-                $xaml.SelectNodes( '//*[@Name]' ) | ForEach-Object `
-                {
-                    if( $value = $Form.FindName($_.Name) )
-                    {
-                        Set-Variable -Name "WPF$($_.Name)" -Value $value -Scope Script
-                    }
-                }
-            }
-            else
-            {
-                Throw 'Failed to convert input XAML to WPF XML'
-            }
-
-            $form
-        }
-
-        ##Start-Transcript -Path (Join-Path -Path $env:temp -ChildPath "clock.thread.log")
-        Add-Type -AssemblyName PresentationCore,PresentationFramework,WindowsBase,System.Windows.Forms
-
-        if( $syncHash.Form = Load-GUI -inputXaml $mainwindowXAML )
-        {
-            $syncHash.Form.TopMost = $true
-            $WPFtxtClock.Text = ''
-            $syncHash.Clock = $WPFtxtClock
-            $syncHash.RunCheckBox = $WPFcheckboxRun
-            $syncHash.ResetButton = $WPFbtnReset
-            $syncHash.Reset = $false
-            $WPFbtnReset.Add_Click( { $_.Handled = $true ; $syncHash.Reset = ! $syncHash.Reset } )
-            $synchash.Form.add_KeyDown({
-                Param
-                (
-                  [Parameter(Mandatory)][Object]$sender,
-                  [Parameter(Mandatory)][Windows.Input.KeyEventArgs]$event
-                )
-                if( $event -and $event.Key -eq 'Space' )
-                {
-                    $_.Handled = $true
-                    $WPFcheckboxRun.IsChecked = ! $WPFcheckboxRun.IsChecked
-                }    
-            })
-            $null = $syncHash.Form.ShowDialog()
-            $syncHash.Form = $null
-        }
-        else
-        {
-            Throw $_
-        }
-    }
-    catch
-    {
-        $syncHash.Form = $null
-        Throw $_
-    }
-    finally
-    {
-        ##Stop-Transcript
-    }
-})
-  
-$powerShellScript.Runspace = $newRunspace
-$invocation = $powerShellScript.BeginInvoke()
-
-## Wait for form to be visible
-$timer = [Diagnostics.Stopwatch]::StartNew()
-  
-## Start-Sleep doesn't return anything so we are just sleeping part way through the while statement :-)
-do
+Function Load-GUI
 {
-    try
-    {
-        $notDone = (  ! $invocation.IsCompleted -and ! $syncHash.Contains( 'Form' ) -and ! (Start-Sleep -Milliseconds 333) -and ! $syncHash.Form.PSObject.Properties[ 'Handle' ]  )
-    }
-    catch
-    {
-        $notDone = $True
-        Write-Debug -Message $_
-    }
-    if( ! $notDone -and $timer.Elapsed.TotalSeconds -gt $timeoutSeconds )
-    {
-        Throw "Timeout waiting for form to appear"
-    }
-} while( $notDone )
-    
-$timer.Stop()
+    Param
+    (
+        [Parameter(Mandatory=$true)]
+        $inputXaml
+    )
 
-if( $syncHash.Contains( 'Form' ) -and $syncHash.Form -and $syncHash.Clock )
-{
-    $notStarted = $false
-    $lastTime = $null
-
-    if( $stopWatch )
+    $form = $null
+    if( ( $inputXML = $inputXaml -replace 'mc:Ignorable="d"' , '' -replace 'x:N' ,'N'  -replace '^<Win.*' , '<Window' ) `
+        -and ( [xml]$xaml = $inputXML ) `
+            -and ($reader = New-Object -TypeName Xml.XmlNodeReader -ArgumentList $xaml ) )
     {
-        $timer.Reset()
-        if( $start )
+        try
         {
-            $timer.Start()
+            $form = [Windows.Markup.XamlReader]::Load( $reader )
         }
-        else
+        catch
         {
-            $syncHash.Form.Dispatcher.Invoke( 'Normal' , [action]{ $syncHash.Clock.Text = '00:00:00' } )
-            $notStarted = $true
+            Throw "Unable to load Windows.Markup.XamlReader. Double-check syntax and ensure .NET is installed.`n$_"
         }
-        $syncHash.Form.Dispatcher.Invoke( 'Normal' , [action]{ $syncHash.RunCheckBox.IsChecked = $start } )   
+ 
+        $xaml.SelectNodes( '//*[@Name]' ) | ForEach-Object `
+        {
+            if( $value = $Form.FindName($_.Name) )
+            {
+                Set-Variable -Name "WPF$($_.Name)" -Value $value -Scope Script
+            }
+        }
     }
     else
     {
-        $syncHash.Form.Dispatcher.Invoke( 'Normal' , [action]{ $syncHash.ResetButton.IsEnabled = $false } )      
+        Throw 'Failed to convert input XAML to WPF XML'
     }
-    While( $syncHash.Form -and $syncHash.Clock -and $syncHash.Form.IsVisible )
+
+    $form
+}
+
+##Start-Transcript -Path (Join-Path -Path $env:temp -ChildPath "clock.thread.log")
+Add-Type -AssemblyName PresentationCore,PresentationFramework,WindowsBase,System.Windows.Forms
+
+if( ! ( $Form = Load-GUI -inputXaml $mainwindowXAML ) )
+{
+    Exit 1
+}
+
+$form.TopMost = $true
+$form.Title = $(if( $stopWatch ) { 'Guy''s Stopwatch' } else { 'Guy''s Clock' })
+$WPFtxtClock.Text = $(if( $stopWatch ) { '00:00:00.0' } else { Get-Date -Format T })
+
+$WPFbtnReset.Add_Click({ 
+    $_.Handled = $true
+    $timer.Reset()
+    if( $WPFcheckboxRun.IsChecked )
     {
-        ## for reasons unknown the IsChecked property doesn't work so this parses the text "System.Windows.Controls.CheckBox Content:Run IsChecked:False"
-        if( ! $syncHash.RunCheckBox -or $syncHash.RunCheckBox.ToString() -match 'IsChecked:True' )
+        $timer.Start() 
+    }
+    else
+    {
+        $WPFtxtClock.Text = '00:00:00.0'
+    }})
+
+$WPFbtnReset.IsEnabled = $stopWatch
+
+$WPFcheckboxRun.Add_Click({
+    $_.Handled = $true
+    if( $stopWatch )
+    {
+        if( $WPFcheckboxRun.IsChecked )
         {
-            if( $stopWatch )
+            $timer.Start() 
+        }
+        else
+        {
+            $timer.Stop() 
+        }
+    }})
+
+$form.add_KeyDown({
+    Param
+    (
+        [Parameter(Mandatory)][Object]$sender,
+        [Parameter(Mandatory)][Windows.Input.KeyEventArgs]$event
+    )
+    if( $event -and $event.Key -eq 'Space' )
+    {
+        $_.Handled = $true
+        $WPFcheckboxRun.IsChecked = ! $WPFcheckboxRun.IsChecked
+        if( $stopWatch )
+        {
+            if( $WPFcheckboxRun.IsChecked )
             {
-                if( $syncHash.Reset -or $notStarted )
-                {
-                    $timer.Reset()
-                    $timer.Start()
-                    $syncHash.Reset = $notStarted = $false
-                }
-                elseif( ! $timer.IsRunning )
-                {
-                    $timer.Start()
-                }
-                $timeNow = "{0:d2}:{1:d2}:{2:d2}" -f $timer.Elapsed.Hours , $timer.Elapsed.Minutes , $timer.Elapsed.Seconds
+                $timer.Start()
             }
             else
             {
-                $timeNow = Get-Date -Format T
-            }
-            if( $timeNow -ne $lastTime )
-            {
-                $syncHash.Form.Dispatcher.Invoke( 'Normal' , [action]{ $syncHash.Clock.Text = $timeNow } )
-                $lastTime = $timeNow
+                $timer.Stop()
             }
         }
-        elseif( $syncHash.Reset )
-        {
-            $timer.Reset()
-            $syncHash.Reset = $false
-            $syncHash.Form.Dispatcher.Invoke( 'Normal' , [action]{ $syncHash.Clock.Text = '00:00:00' } )
-        }
-        elseif( $stopWatch )
-        {
-            $timer.Stop()
-        }
-        Start-Sleep -Milliseconds 333 ## yuck
-    }
-}
-elseif( ! $invocation.IsCompleted )
+    }    
+})
+
+[scriptblock]$timerBlock = `
 {
-    ## Terminate thread
-    $powerShellScript.Stop()
-    $powerShellScript.Dispose()
-}
-else
-{
-    $result = $powerShellScript.EndInvoke( $invocation )
-    if( $result )
+    if( $WPFcheckboxRun.IsChecked -and ` 
+        ( $newTime = $(if( $stopWatch ) { '{0:d2}:{1:d2}:{2:d2}.{3:d1}' -f $timer.Elapsed.Hours , $timer.Elapsed.Minutes , $timer.Elapsed.Seconds, $( [int]$tenths = $timer.Elapsed.Milliseconds / 100 ; if( $tenths -ge 10 ) { 0 } else { $tenths } ) } else { Get-Date -Format T })) -ne $script:lastTime )
     {
-        Write-Error -Message "Failed to create Windows form: $result"
-        $exitCode = 1
+        Write-Debug -Message "New time is $newTime, lasttime was $script:lasttime"
+        $script:lastTime = $newTime
+        $WPFtxtClock.Text = $newTime
     }
 }
 
-Exit $exitCode
+## https://richardspowershellblog.wordpress.com/2011/07/07/a-powershell-clock/
+$form.Add_SourceInitialized({
+    $formTimer = New-Object -TypeName System.Windows.Threading.DispatcherTimer
+    $formTimer.Interval = $(if( $stopWatch ) { [Timespan]'00:00:00.100' } else { [Timespan]'00:00:00.750' })
+    $formTimer.Add_Tick( $timerBlock )
+    $formTimer.Start()
+})
+
+$timer = New-Object -TypeName Diagnostics.Stopwatch
+
+$script:lastTime = $null
+
+if( $stopWatch )
+{
+    if( $WPFcheckboxRun.IsChecked = $start )
+    {
+        $timer.Start()
+    }
+}
+else
+{
+    $WPFcheckboxRun.IsChecked = $true
+}
+
+$null = $Form.ShowDialog()
