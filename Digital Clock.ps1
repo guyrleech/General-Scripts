@@ -13,13 +13,13 @@ Run a stopwatch rather than showing current time
 
 Start the stopwatch immediately
 
+.PARAMETER notOnTop
+
+Do not place the window on top of all other windows
+
 .PARAMETER markerFile
 
 A file to look for which will be then seen in a SysInternals Process Monitor trace as a CreateFile operation to allow cross referencing to that
-
-.PARAMETER timeoutSeconds
-
-The time in seconds to wait for the user interface to appear before declaring an error
 
 .EXAMPLE
 
@@ -55,7 +55,7 @@ Param
     [switch]$stopWatch ,
     [switch]$start ,
     [string]$markerFile ,
-    [int]$timeoutSeconds = 30
+    [switch]$notOnTop
 )
 
 [int]$exitCode = 0
@@ -155,7 +155,6 @@ Function Load-GUI
     $form
 }
 
-##Start-Transcript -Path (Join-Path -Path $env:temp -ChildPath "clock.thread.log")
 Add-Type -AssemblyName PresentationCore,PresentationFramework,WindowsBase,System.Windows.Forms
 
 if( ! ( $Form = Load-GUI -inputXaml $mainwindowXAML ) )
@@ -163,7 +162,7 @@ if( ! ( $Form = Load-GUI -inputXaml $mainwindowXAML ) )
     Exit 1
 }
 
-$form.TopMost = $true
+$form.TopMost = ! $notOnTop
 $form.Title = $(if( $stopWatch ) { 'Guy''s Stopwatch' } else { 'Guy''s Clock' })
 $WPFtxtClock.Text = $(if( $stopWatch ) { '00:00:00.0' } else { Get-Date -Format T })
 
