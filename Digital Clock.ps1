@@ -46,6 +46,7 @@ Display a stopwatch in a window and start it immediately
     @guyrleech 14/05/2020  Initial release
                            Rewrote to use WPF DispatcherTimer rather than runspaces
                            Added marker functionality
+    @guyrleech 15/05/2020  Pressing C puts existing marker items onto the Windows clipboard
 #>
 
 [CmdletBinding()]
@@ -80,7 +81,7 @@ Param
         </Grid>
         <TextBox x:Name="txtMarkerFile" HorizontalAlignment="Left" Height="24" Margin="92,154,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="268"/>
         <Label Content="Marker File" HorizontalAlignment="Left" Height="23" Margin="10,155,0,0" VerticalAlignment="Top" Width="72"/>
-        <ListView x:Name="listMarkings" HorizontalAlignment="Left" Height="210" Margin="375,13,0,0" VerticalAlignment="Top" Width="229" >
+        <ListView x:Name="listMarkings" HorizontalAlignment="Stretch" Height="210" Margin="375,13,0,0" VerticalAlignment="Stretch" Width="229" >
             <ListView.View>
                 <GridView>
                     <GridView.ColumnHeaderContextMenu>
@@ -245,7 +246,12 @@ $form.add_KeyDown({
                 $timer.Stop()
             }
         }
-    }    
+    }
+    elseif( $event -and $event.Key -eq 'C' -and $WPFlistMarkings.Items -and $WPFlistMarkings.Items.Count )
+    {
+        $_.Handled = $true
+        $WPFlistMarkings.Items | Out-String | Set-Clipboard
+    }
 })
 
 [scriptblock]$timerBlock = `
@@ -263,8 +269,8 @@ $form.add_KeyDown({
 $form.Add_SourceInitialized({
     if( $formTimer = New-Object -TypeName System.Windows.Threading.DispatcherTimer )
     {
-        ## need 0.1s granularity for the stopwatch but only sub-second for the clock
-        $formTimer.Interval = $(if( $stopWatch ) { [Timespan]'00:00:00.100' } else { [Timespan]'00:00:00.750' })
+        ## need 0.1s granularity for the stopwatch but only just sub-second for the clock
+        $formTimer.Interval = $(if( $stopWatch ) { [Timespan]'00:00:00.100' } else { [Timespan]'00:00:00.5' })
         $formTimer.Add_Tick( $timerBlock )
         $formTimer.Start()
     }
