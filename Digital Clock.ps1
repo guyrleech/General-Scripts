@@ -47,6 +47,7 @@ Display a stopwatch in a window and start it immediately
                            Rewrote to use WPF DispatcherTimer rather than runspaces
                            Added marker functionality
     @guyrleech 15/05/2020  Pressing C puts existing marker items onto the Windows clipboard
+    @guyrleech 21/05/2020  Added Clear button, other GUI adjustments
 #>
 
 [CmdletBinding()]
@@ -73,26 +74,32 @@ Param
         Title="Guy's Clock" Height="272.694" Width="621.765">
     <Grid>
         <TextBox x:Name="txtClock" HorizontalAlignment="Left" Height="126" Margin="24,29,0,0" TextWrapping="Wrap" Text="TextBox" VerticalAlignment="Top" Width="358" FontSize="72" IsReadOnly="True" FontWeight="Bold" BorderThickness="0"/>
-        <Grid Margin="24,200,294,10">
+        <Grid Margin="24,200,270,10">
             <CheckBox x:Name="checkboxRun" Content="_Run" HorizontalAlignment="Left" Height="18" Margin="-11,5,0,0" VerticalAlignment="Top" Width="76" IsChecked="True"/>
-            <Button x:Name="btnReset" Content="Re_set" HorizontalAlignment="Left" Height="23" Margin="188,0,0,0" VerticalAlignment="Top" Width="95"/>
-            <Button x:Name="btnMark" Content="_Mark" HorizontalAlignment="Left" Height="23" Margin="65,0,0,0" VerticalAlignment="Top" Width="95"/>
+            <Button x:Name="btnReset" Content="Re_set" HorizontalAlignment="Left" Height="23" Margin="147,-1,0,0" VerticalAlignment="Top" Width="65"/>
+            <Button x:Name="btnMark" Content="_Mark" HorizontalAlignment="Left" Height="23" Margin="65,0,0,0" VerticalAlignment="Top" Width="65"/>
+            <Button x:Name="btnClear" Content="_Clear" HorizontalAlignment="Left" Height="23" Margin="231,-1,0,0" VerticalAlignment="Top" Width="65"/>
 
         </Grid>
         <TextBox x:Name="txtMarkerFile" HorizontalAlignment="Left" Height="24" Margin="92,154,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="268"/>
         <Label Content="Marker File" HorizontalAlignment="Left" Height="23" Margin="10,155,0,0" VerticalAlignment="Top" Width="72"/>
-        <ListView x:Name="listMarkings" HorizontalAlignment="Stretch" Height="210" Margin="375,13,0,0" VerticalAlignment="Stretch" Width="229" >
-            <ListView.View>
-                <GridView>
-                    <GridView.ColumnHeaderContextMenu>
-                        <ContextMenu/>
-                    </GridView.ColumnHeaderContextMenu>
-                    <GridViewColumn Header="Timestamp" DisplayMemberBinding="{Binding Timestamp}"/>
-                    <GridViewColumn Header="Notes" DisplayMemberBinding="{Binding Notes}"/>
-                </GridView>
-            </ListView.View>
-        </ListView>
+        <Grid Margin="380,13,5,19">
+            <ListView x:Name="listMarkings" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" >
+                <ListView.View>
+                    <GridView>
+                        <GridView.ColumnHeaderContextMenu>
+                            <ContextMenu/>
+                        </GridView.ColumnHeaderContextMenu>
+                        <GridViewColumn Header="Timestamp" DisplayMemberBinding="{Binding Timestamp}"/>
+                        <GridViewColumn Header="Notes" DisplayMemberBinding="{Binding Notes}"/>
+                    </GridView>
+                </ListView.View>
+            </ListView>
+
+        </Grid>
+
     </Grid>
+
 </Window>
 '@
 
@@ -118,7 +125,7 @@ Param
 </Window>
 '@
 
-Function Load-GUI
+Function New-Form
 {
     Param
     (
@@ -158,7 +165,7 @@ Function Load-GUI
 
 Add-Type -AssemblyName PresentationCore,PresentationFramework,WindowsBase,System.Windows.Forms
 
-if( ! ( $Form = Load-GUI -inputXaml $mainwindowXAML ) )
+if( ! ( $Form = New-Form -inputXaml $mainwindowXAML ) )
 {
     Exit 1
 }
@@ -181,11 +188,17 @@ $WPFbtnReset.Add_Click({
 
 $WPFbtnReset.IsEnabled = $stopWatch
 
+$WPFbtnClear.Add_Click({
+    $WPFlistMarkings.Items.Clear()
+})
+
 $WPFbtnMark.Add_Click({
     $_.Handled = $true
 
     [string]$timestamp = $(if( $stopWatch ) { '{0:d2}:{1:d2}:{2:d2}.{3:d3}' -f $timer.Elapsed.Hours , $timer.Elapsed.Minutes , $timer.Elapsed.Seconds, $timer.Elapsed.Milliseconds } else { Get-Date -Format 'HH:mm:ss.ffffff' } )
     
+    Write-Verbose -Message "Mark button pressed, timestamp $timestamp"
+
     ## if file exists then read else write it
     if( ! [string]::IsNullOrEmpty( $WPFtxtMarkerFile.Text ) )
     {
@@ -193,7 +206,7 @@ $WPFbtnMark.Add_Click({
         Test-Path -Path (([Environment]::ExpandEnvironmentVariables( $WPFtxtMarkerFile.Text ))) -ErrorAction SilentlyContinue
     }
     ## add current time/stopwatch to gridview
-    if( $markerTextForm = Load-GUI -inputXaml $markerTextXAML )
+    if( $markerTextForm = New-Form -inputXaml $markerTextXAML )
     {
         $markerTextForm.TopMost = $true
         $WPFbtnMarkerTextOk.Add_Click({
@@ -206,7 +219,7 @@ $WPFbtnMark.Add_Click({
 
         if( $markerTextForm.ShowDialog() )
         {
-            $null = $WPFlistMarkings.Items.Add( ([pscustomobject]@{ 'Timestamp' = $timestamp ; 'Notes' = $WPFtextBoxMarkerText.Text.ToString() }) )
+            $null = $WPFlistMarkings.Items.Add( ([pscustomobject]@{ 'Timestamp' = $timestamp ; 'Notes' = $WPFtextBoxMarkerText.Text.ToString() }) )     
         }
     }
 })
