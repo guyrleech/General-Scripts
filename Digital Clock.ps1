@@ -48,6 +48,7 @@ Display a stopwatch in a window and start it immediately
                            Added marker functionality
     @guyrleech 15/05/2020  Pressing C puts existing marker items onto the Windows clipboard
     @guyrleech 21/05/2020  Added Clear button, other GUI adjustments
+    @guyrleech 22/05/2020  Forced date to 24 hour clock as problem reported with Am/PM indicators when using date format "T"
 #>
 
 [CmdletBinding()]
@@ -172,7 +173,7 @@ if( ! ( $Form = New-Form -inputXaml $mainwindowXAML ) )
 
 $form.TopMost = ! $notOnTop
 $form.Title = $(if( $stopWatch ) { 'Guy''s Stopwatch' } else { 'Guy''s Clock' })
-$WPFtxtClock.Text = $(if( $stopWatch ) { '00:00:00.0' } else { Get-Date -Format T })
+$WPFtxtClock.Text = $(if( $stopWatch ) { '00:00:00.0' } else { Get-Date -Format 'HH:mm:ss' })
 
 $WPFbtnReset.Add_Click({ 
     $_.Handled = $true
@@ -270,7 +271,7 @@ $form.add_KeyDown({
 [scriptblock]$timerBlock = `
 {
     if( $WPFcheckboxRun.IsChecked -and ` 
-        ( $newTime = $(if( $stopWatch ) { '{0:d2}:{1:d2}:{2:d2}.{3:d1}' -f $timer.Elapsed.Hours , $timer.Elapsed.Minutes , $timer.Elapsed.Seconds, $( [int]$tenths = $timer.Elapsed.Milliseconds / 100 ; if( $tenths -ge 10 ) { 0 } else { $tenths } ) } else { Get-Date -Format T })) -ne $script:lastTime )
+        ( $newTime = $(if( $stopWatch ) { '{0:d2}:{1:d2}:{2:d2}.{3:d1}' -f $timer.Elapsed.Hours , $timer.Elapsed.Minutes , $timer.Elapsed.Seconds, $( [int]$tenths = $timer.Elapsed.Milliseconds / 100 ; if( $tenths -ge 10 ) { 0 } else { $tenths } ) } else { Get-Date -Format 'HH:mm:ss' })) -ne $script:lastTime )
     {
         Write-Debug -Message "New time is $newTime, lasttime was $script:lasttime"
         $script:lastTime = $newTime
