@@ -49,6 +49,7 @@ Display a stopwatch in a window and start it immediately
     @guyrleech 15/05/2020  Pressing C puts existing marker items onto the Windows clipboard
     @guyrleech 21/05/2020  Added Clear button, other GUI adjustments
     @guyrleech 22/05/2020  Forced date to 24 hour clock as problem reported with Am/PM indicators when using date format "T"
+    @guyrleech 25/05/2020  Added edit and delete context menu items for markers
 #>
 
 [CmdletBinding()]
@@ -62,7 +63,6 @@ Param
 )
 
 [int]$exitCode = 0
-
 
 [string]$mainwindowXAML = @'
 <Window x:Class="Timer.MainWindow"
@@ -85,7 +85,13 @@ Param
         <TextBox x:Name="txtMarkerFile" HorizontalAlignment="Left" Height="24" Margin="92,154,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="268"/>
         <Label Content="Marker File" HorizontalAlignment="Left" Height="23" Margin="10,155,0,0" VerticalAlignment="Top" Width="72"/>
         <Grid Margin="380,13,5,19">
-            <ListView x:Name="listMarkings" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" >
+            <ListView x:Name="listMarkings" HorizontalAlignment="Stretch" Height="210" VerticalAlignment="Stretch" Width="229">
+                 <ListView.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="Edit" Name="EditContextMenu" />
+                        <MenuItem Header="Delete" Name="DeleteContextMenu" />
+                    </ContextMenu>
+                </ListView.ContextMenu>      
                 <ListView.View>
                     <GridView>
                         <GridView.ColumnHeaderContextMenu>
@@ -96,11 +102,8 @@ Param
                     </GridView>
                 </ListView.View>
             </ListView>
-
         </Grid>
-
     </Grid>
-
 </Window>
 '@
 
@@ -112,7 +115,7 @@ Param
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:Timer"
         mc:Ignorable="d"
-        Title="Marker Text" Height="285.211" Width="589.034">
+        Title="Marker Text" Height="285.211" Width="589.034" Name="Marker">
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="31*"/>
@@ -125,6 +128,45 @@ Param
     </Grid>
 </Window>
 '@
+
+Function Set-MarkerText
+{
+    Param
+    (
+        $item , ## if not passed then a new item otherwise editing
+        $timestamp
+    )
+
+    if( $markerTextForm = New-Form -inputXaml $markerTextXAML )
+    {
+        $markerTextForm.TopMost = $true ## got to be on top of the clock itself
+        $WPFbtnMarkerTextOk.Add_Click({
+            $_.Handled = $true          
+            $markerTextForm.DialogResult = $true 
+            $markerTextForm.Close()
+            })
+        
+        if( $item )
+        {
+            $WPFtextBoxMarkerText.Text = $item.Notes
+        }
+        $WPFtextBoxMarkerText.Focus()
+        $WPFMarker.Title = "$(if( $item ) { 'Edit' } else { 'Set' }) text for marker @ $(if( $item ) { $item.Timestamp } else { $Timestamp})"
+
+        if( $markerTextForm.ShowDialog() )
+        {
+            if( $item )
+            {
+                $item.Notes = $WPFtextBoxMarkerText.Text.ToString()
+                $WPFlistMarkings.Items.Refresh()
+            }
+            else ## new item
+            {
+                $null = $WPFlistMarkings.Items.Add( ([pscustomobject]@{ 'Timestamp' = $timestamp ; 'Notes' = $WPFtextBoxMarkerText.Text.ToString() }) )  
+            }
+        }
+    }
+}
 
 Function New-Form
 {
@@ -207,22 +249,7 @@ $WPFbtnMark.Add_Click({
         Test-Path -Path (([Environment]::ExpandEnvironmentVariables( $WPFtxtMarkerFile.Text ))) -ErrorAction SilentlyContinue
     }
     ## add current time/stopwatch to gridview
-    if( $markerTextForm = New-Form -inputXaml $markerTextXAML )
-    {
-        $markerTextForm.TopMost = $true
-        $WPFbtnMarkerTextOk.Add_Click({
-            $_.Handled = $true          
-            $markerTextForm.DialogResult = $true 
-            $markerTextForm.Close()
-            })
-            
-        $WPFtextBoxMarkerText.Focus()
-
-        if( $markerTextForm.ShowDialog() )
-        {
-            $null = $WPFlistMarkings.Items.Add( ([pscustomobject]@{ 'Timestamp' = $timestamp ; 'Notes' = $WPFtextBoxMarkerText.Text.ToString() }) )     
-        }
-    }
+    Set-MarkerText -timestamp $timestamp
 })
 
 $WPFcheckboxRun.Add_Click({
@@ -265,6 +292,34 @@ $form.add_KeyDown({
     {
         $_.Handled = $true
         $WPFlistMarkings.Items | Out-String | Set-Clipboard
+    }
+})
+
+$WPFEditContextMenu.Add_Click({
+    $_.Handled = $true
+    ForEach( $item in $WPFlistMarkings.SelectedItems )
+    {
+        Set-MarkerText -item $item
+    }
+})
+
+$WPFlistMarkings.add_MouseDoubleClick({
+    $_.Handled = $true
+    ForEach( $item in $WPFlistMarkings.SelectedItems )
+    {
+        Set-MarkerText -item $item
+    }
+})
+
+$WPFDeleteContextMenu.Add_Click({
+    $_.Handled = $true
+    [array]$removals = @( ForEach( $item  in $WPFlistMarkings.SelectedItems )
+    {
+        $item ## can't remove items whilst enumerating so put in an array
+    })
+    ForEach( $removal in $removals )
+    {
+        $WPFlistMarkings.Items.Remove( $removal ) 
     }
 })
 
