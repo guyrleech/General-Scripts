@@ -3,7 +3,7 @@
 <#
 .SYNOPSIS
 
-Display digitial clock with granularity in seconds or a stopwatch in a window with ability to stop/start
+Display digitial clock with granularity in seconds or a stopwatch or countdown timer in a window with ability to stop/start/reset
 
 .PARAMETER stopwatch
 
@@ -20,6 +20,14 @@ Do not place the window on top of all other windows
 .PARAMETER markerFile
 
 A file to look for which will be then seen in a SysInternals Process Monitor trace as a CreateFile operation to allow cross referencing to that
+
+.PARAMETER countdown
+
+Run a countdown timer starting at the value specified as hh:mm:ss
+
+.PARAMETER beep
+
+Emit a beep of the duration specified in milliseconds when the countdown timer expires
 
 .EXAMPLE
 
@@ -39,6 +47,12 @@ Display a stopwatch in a window but do not start it until the Run checkbox is ch
 
 Display a stopwatch in a window and start it immediately
 
+.EXAMPLE
+
+& '.\Digital Clock.ps1' -countdown 00:03:00 -beep 2000
+
+Display a countdown timer starting at 3 minutes in a window but do not start it until the Run checkbox is checked. When the timer expires, sound a beep for 2 seconds
+
 .NOTES
 
     Modification History:
@@ -51,6 +65,7 @@ Display a stopwatch in a window and start it immediately
     @guyrleech 22/05/2020  Forced date to 24 hour clock as problem reported with Am/PM indicators when using date format "T"
     @guyrleech 25/05/2020  Added edit and delete context menu items for markers
                            Fixed resizing regression
+                           Added countdown timer with -beep and -countdown
 #>
 
 [CmdletBinding()]
@@ -60,7 +75,9 @@ Param
     [switch]$stopWatch ,
     [switch]$start ,
     [string]$markerFile ,
-    [switch]$notOnTop
+    [string]$countdown ,
+    [switch]$notOnTop ,
+    [int]$beep
 )
 
 [int]$exitCode = 0
@@ -73,35 +90,37 @@ Param
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:Timer"
         mc:Ignorable="d"
-        Title="Guy's Clock" Height="272.694" Width="621.765">
+        Title="Guy's Clock" Height="272.694" Width="636.432">
     <Grid>
-        <TextBox x:Name="txtClock" HorizontalAlignment="Left" Height="126" Margin="24,29,0,0" TextWrapping="Wrap" Text="TextBox" VerticalAlignment="Top" Width="358" FontSize="72" IsReadOnly="True" FontWeight="Bold" BorderThickness="0"/>
-        <Grid Margin="24,200,270,10">
-            <CheckBox x:Name="checkboxRun" Content="_Run" HorizontalAlignment="Left" Height="18" Margin="-11,5,0,0" VerticalAlignment="Top" Width="76" IsChecked="True"/>
-            <Button x:Name="btnReset" Content="Re_set" HorizontalAlignment="Left" Height="23" Margin="147,-1,0,0" VerticalAlignment="Top" Width="65"/>
-            <Button x:Name="btnMark" Content="_Mark" HorizontalAlignment="Left" Height="23" Margin="65,0,0,0" VerticalAlignment="Top" Width="65"/>
-            <Button x:Name="btnClear" Content="_Clear" HorizontalAlignment="Left" Height="23" Margin="231,-1,0,0" VerticalAlignment="Top" Width="65"/>
+        <TextBox x:Name="txtClock" HorizontalAlignment="Left" Height="111" Margin="24,29,0,0" TextWrapping="Wrap" Text="TextBox" VerticalAlignment="Top" Width="358" FontSize="72" IsReadOnly="True" FontWeight="Bold" BorderThickness="0"/>
+        <Grid Margin="24,200,244,10">
+            <CheckBox x:Name="checkboxRun" Content="_Run" HorizontalAlignment="Left" Height="18" Margin="-11,5,0,0" VerticalAlignment="Top" Width="52" IsChecked="True"/>
+            <Button x:Name="btnReset" Content="Re_set" HorizontalAlignment="Left" Height="23" Margin="112,-1,0,0" VerticalAlignment="Top" Width="72"/>
+            <Button x:Name="btnMark" Content="_Mark" HorizontalAlignment="Left" Height="23" Margin="35,-1,0,0" VerticalAlignment="Top" Width="72"/>
+            <Button x:Name="btnClear" Content="_Clear" HorizontalAlignment="Left" Height="23" Margin="189,-1,0,0" VerticalAlignment="Top" Width="72"/>
+            <Button x:Name="btnCountdown" Content="Count _Down" HorizontalAlignment="Left" Height="23" Margin="268,-1,0,0" VerticalAlignment="Top" Width="72"/>
 
         </Grid>
-        <TextBox x:Name="txtMarkerFile" HorizontalAlignment="Left" Height="24" Margin="92,154,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="268"/>
-        <Label Content="Marker File" HorizontalAlignment="Left" Height="23" Margin="10,155,0,0" VerticalAlignment="Top" Width="72"/>
-            <ListView x:Name="listMarkings" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="375,13,10,10" >
-                 <ListView.ContextMenu>
-                    <ContextMenu>
-                        <MenuItem Header="Edit" Name="EditContextMenu" />
-                        <MenuItem Header="Delete" Name="DeleteContextMenu" />
-                    </ContextMenu>
-                </ListView.ContextMenu>      
-                <ListView.View>
-                    <GridView>
-                        <GridView.ColumnHeaderContextMenu>
-                            <ContextMenu/>
-                        </GridView.ColumnHeaderContextMenu>
-                        <GridViewColumn Header="Timestamp" DisplayMemberBinding="{Binding Timestamp}"/>
-                        <GridViewColumn Header="Notes" DisplayMemberBinding="{Binding Notes}"/>
-                    </GridView>
-                </ListView.View>
-            </ListView>
+        <TextBox x:Name="txtMarkerFile" HorizontalAlignment="Left" Height="24" Margin="92,144,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="268"/>
+        <Label Content="Marker File" HorizontalAlignment="Left" Height="23" Margin="10,145,0,0" VerticalAlignment="Top" Width="72"/>
+        <ListView x:Name="listMarkings" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="382,13,10,10" >
+            <ListView.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Edit" Name="EditContextMenu" />
+                    <MenuItem Header="Delete" Name="DeleteContextMenu" />
+                </ContextMenu>
+            </ListView.ContextMenu>
+            <ListView.View>
+                <GridView>
+                    <GridView.ColumnHeaderContextMenu>
+                        <ContextMenu/>
+                    </GridView.ColumnHeaderContextMenu>
+                    <GridViewColumn Header="Timestamp" DisplayMemberBinding="{Binding Timestamp}"/>
+                    <GridViewColumn Header="Notes" DisplayMemberBinding="{Binding Notes}"/>
+                </GridView>
+            </ListView.View>
+        </ListView>
+        <CheckBox x:Name="checkboxBeep" Content="Beep" HorizontalAlignment="Left" Height="15" Margin="13,180,0,0" VerticalAlignment="Top" Width="93"/>
     </Grid>
 </Window>
 '@
@@ -207,14 +226,45 @@ Function New-Form
 
 Add-Type -AssemblyName PresentationCore,PresentationFramework,WindowsBase,System.Windows.Forms
 
+if( $PSBoundParameters[ 'stopwatch' ] -and $PSBoundParameters[ 'countdown' ] )
+{
+    Throw "Cannot have both -stopwatch and -countdown"
+}
+
 if( ! ( $Form = New-Form -inputXaml $mainwindowXAML ) )
 {
     Exit 1
 }
 
+$WPFcheckboxBeep.IsEnabled = $null -ne $PSBoundParameters[ 'countdown' ]
+$WPFcheckboxBeep.IsChecked = $null -ne $PSBoundParameters[ 'beep' ]
+
 $form.TopMost = ! $notOnTop
-$form.Title = $(if( $stopWatch ) { 'Guy''s Stopwatch' } else { 'Guy''s Clock' })
-$WPFtxtClock.Text = $(if( $stopWatch ) { '00:00:00.0' } else { Get-Date -Format 'HH:mm:ss' })
+$form.Title = $(if( $stopWatch ) { 'Guy''s Stopwatch' } elseif( $countdown ) { 'Guy''s Countdown Timer' } else { 'Guy''s Clock' })
+
+[int]$countdownSeconds = 0
+
+$WPFtxtClock.Text = $(if( $stopWatch )
+    {
+        '00:00:00.0'
+    }
+    elseif( $countdown )
+    {
+        if( $countdown -match '^(\d{1,2}):(\d{1,2}):(\d{1,2})$' )
+        {
+            $countdownSeconds = [int]$Matches[1] * 3600 + [int]$Matches[2] * 60 + [int]$Matches[3]
+            ## reconstitute in case didn't have leading zeroes e.g. 0:3:0
+            '{0:d2}:{1:d2}:{2:d2}' -f ([int][math]::Floor($countdownSeconds / 3600)) , ([int][math]::Floor($countdownSeconds / 60)) , ([int]($countdownSeconds % 60))
+        }
+        else
+        {
+            Throw "Countdown period must be specified in hh:mm:ss"
+        }
+    }
+    else
+    {
+        Get-Date -Format 'HH:mm:ss'
+    })
 
 $WPFbtnReset.Add_Click({ 
     $_.Handled = $true
@@ -223,12 +273,16 @@ $WPFbtnReset.Add_Click({
     {
         $timer.Start() 
     }
-    else
+    elseif( $stopWatch )
     {
         $WPFtxtClock.Text = '00:00:00.0'
+    }
+    else
+    {
+        $WPFtxtClock.Text = $countdown
     }})
 
-$WPFbtnReset.IsEnabled = $stopWatch
+$WPFbtnReset.IsEnabled = $stopWatch -or $countdown
 
 $WPFbtnClear.Add_Click({
     $WPFlistMarkings.Items.Clear()
@@ -237,7 +291,22 @@ $WPFbtnClear.Add_Click({
 $WPFbtnMark.Add_Click({
     $_.Handled = $true
 
-    [string]$timestamp = $(if( $stopWatch ) { '{0:d2}:{1:d2}:{2:d2}.{3:d3}' -f $timer.Elapsed.Hours , $timer.Elapsed.Minutes , $timer.Elapsed.Seconds, $timer.Elapsed.Milliseconds } else { Get-Date -Format 'HH:mm:ss.ffffff' } )
+    [string]$timestamp = $(if( $stopWatch )
+    {
+        '{0:d2}:{1:d2}:{2:d2}.{3:d3}' -f $timer.Elapsed.Hours , $timer.Elapsed.Minutes , $timer.Elapsed.Seconds, $timer.Elapsed.Milliseconds
+    }
+    elseif( $countdown )
+    {
+        if( ( [int]$secondsLeft = $countdownSeconds - $timer.Elapsed.TotalSeconds) -le 0 )
+        {
+            $secondsLeft = 0
+        }
+        '{0:d2}:{1:d2}:{2:d2}' -f ([int][math]::Floor($secondsLeft / 3600)) , ([int][math]::Floor($secondsLeft / 60)) , ([int]($secondsLeft % 60))
+    }
+    else
+    {
+        Get-Date -Format 'HH:mm:ss.ffffff'
+    } )
     
     Write-Verbose -Message "Mark button pressed, timestamp $timestamp"
 
@@ -253,14 +322,22 @@ $WPFbtnMark.Add_Click({
 
 $WPFcheckboxRun.Add_Click({
     $_.Handled = $true
-    if( $stopWatch )
+    if( $stopWatch -or $countdown )
     {
         if( $WPFcheckboxRun.IsChecked )
         {
+            if( $countdown )
+            {
+                $WPFbtnCountdown.IsEnabled = $false
+            }
             $timer.Start() 
         }
         else
         {
+            if( $countdown )
+            {
+                $WPFbtnCountdown.IsEnabled = $true
+            }
             $timer.Stop() 
         }
     }})
@@ -275,7 +352,7 @@ $form.add_KeyDown({
     {
         $_.Handled = $true
         $WPFcheckboxRun.IsChecked = ! $WPFcheckboxRun.IsChecked
-        if( $stopWatch )
+        if( $stopWatch -or $countdown )
         {
             if( $WPFcheckboxRun.IsChecked )
             {
@@ -310,6 +387,45 @@ $WPFlistMarkings.add_MouseDoubleClick({
     }
 })
 
+$WPFbtnCountdown.Add_Click({
+    $_.Handled = $true
+    ## unclick the run box, prompt for time and display ready for time run to be clicked
+    $WPFcheckboxRun.IsChecked = $false
+    ## borrowing the marker text dialogue to input countdown timer time
+    if( $markerTextForm = New-Form -inputXaml $markerTextXAML )
+    {
+        $markerTextForm.TopMost = $true ## got to be on top of the clock itself
+        $WPFbtnMarkerTextOk.Add_Click({
+            $_.Handled = $true
+            
+            if( $WPFtextBoxMarkerText.Text -notmatch '^(\d{1,2}):(\d{1,2}):(\d{1,2})$' )
+            {
+                [void][Windows.MessageBox]::Show( "Text `"$($WPFtextBoxMarkerText.Text)`" not in hh:mm:ss format" , 'Countdown Timer Error' , 'Ok' ,'Exclamation' )
+            }
+            else
+            {
+                $markerTextForm.DialogResult = $true 
+                $markerTextForm.Close()
+            }})
+        
+        $WPFtextBoxMarkerText.Text = $countdown
+        $WPFtextBoxMarkerText.Focus()
+        $WPFMarker.Title = "Enter countdown time in hh:mm:ss"
+
+        if( $markerTextForm.ShowDialog() )
+        {
+            if( $WPFtextBoxMarkerText.Text -match '^(\d{1,2}):(\d{1,2}):(\d{1,2})$' )
+            {
+                $script:countdownSeconds = [int]$Matches[1] * 3600 + [int]$Matches[2] * 60 + [int]$Matches[3]
+                ## reconstitute in case didn't have leading zeroes e.g. 0:3:0
+                $WPFtxtClock.Text = $script:countdown = '{0:d2}:{1:d2}:{2:d2}' -f ([int][math]::Floor($script:countdownSeconds / 3600)) , ([int][math]::Floor($script:countdownSeconds / 60)) , ([int]($script:countdownSeconds % 60))
+            }
+            $WPFbtnReset.IsEnabled = $true
+            $WPFcheckboxBeep.IsEnabled = $true
+        }
+    }
+})
+
 $WPFDeleteContextMenu.Add_Click({
     $_.Handled = $true
     [array]$removals = @( ForEach( $item  in $WPFlistMarkings.SelectedItems )
@@ -324,12 +440,40 @@ $WPFDeleteContextMenu.Add_Click({
 
 [scriptblock]$timerBlock = `
 {
-    if( $WPFcheckboxRun.IsChecked -and ` 
-        ( $newTime = $(if( $stopWatch ) { '{0:d2}:{1:d2}:{2:d2}.{3:d1}' -f $timer.Elapsed.Hours , $timer.Elapsed.Minutes , $timer.Elapsed.Seconds, $( [int]$tenths = $timer.Elapsed.Milliseconds / 100 ; if( $tenths -ge 10 ) { 0 } else { $tenths } ) } else { Get-Date -Format 'HH:mm:ss' })) -ne $script:lastTime )
+    if( $WPFcheckboxRun.IsChecked )
     {
-        Write-Debug -Message "New time is $newTime, lasttime was $script:lasttime"
-        $script:lastTime = $newTime
-        $WPFtxtClock.Text = $newTime
+        $newTime = $(if( $stopWatch )
+        {
+            '{0:d2}:{1:d2}:{2:d2}.{3:d1}' -f $timer.Elapsed.Hours , $timer.Elapsed.Minutes , $timer.Elapsed.Seconds, $( [int]$tenths = $timer.Elapsed.Milliseconds / 100 ; if( $tenths -ge 10 ) { 0 } else { $tenths } )
+        }
+        elseif( $countdown )
+        {
+            [int]$secondsLeft = $countdownSeconds - $timer.Elapsed.TotalSeconds
+            [string]$display = '{0:d2}:{1:d2}:{2:d2}' -f ([int][math]::Floor($secondsLeft / 3600)) , ([int][math]::Floor($secondsLeft / 60)) , ([int]($secondsLeft % 60))
+            if( $secondsLeft -le 0 )
+            {
+                $timer.Stop()
+                if( $WPFcheckboxBeep.IsChecked -and $display -ne $script:lastTime )
+                {
+                    [console]::Beep( 1000 , [int]$(if( $script:beep -gt 0 ) { $script:beep } else { 500 } ))
+                }
+                if( $secondsLeft -lt 0 )
+                {
+                    $secondsLeft = 0
+                }
+            }
+            $display
+        }
+        else
+        {
+            Get-Date -Format 'HH:mm:ss'
+        })
+        if( $newTime -ne $script:lastTime )
+        {
+            Write-Debug -Message "New time is $newTime, lasttime was $script:lasttime"
+            $script:lastTime = $newTime
+            $WPFtxtClock.Text = $newTime
+        }
     }
 }
 
@@ -350,7 +494,7 @@ $timer = New-Object -TypeName Diagnostics.Stopwatch
 
 $script:lastTime = $null
 
-if( $stopWatch )
+if( $stopWatch -or $countdown )
 {
     if( $WPFcheckboxRun.IsChecked = $start )
     {
