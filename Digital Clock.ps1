@@ -50,6 +50,7 @@ Display a stopwatch in a window and start it immediately
     @guyrleech 21/05/2020  Added Clear button, other GUI adjustments
     @guyrleech 22/05/2020  Forced date to 24 hour clock as problem reported with Am/PM indicators when using date format "T"
     @guyrleech 25/05/2020  Added edit and delete context menu items for markers
+                           Fixed resizing regression
 #>
 
 [CmdletBinding()]
@@ -84,8 +85,7 @@ Param
         </Grid>
         <TextBox x:Name="txtMarkerFile" HorizontalAlignment="Left" Height="24" Margin="92,154,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="268"/>
         <Label Content="Marker File" HorizontalAlignment="Left" Height="23" Margin="10,155,0,0" VerticalAlignment="Top" Width="72"/>
-        <Grid Margin="380,13,5,19">
-            <ListView x:Name="listMarkings" HorizontalAlignment="Stretch" Height="210" VerticalAlignment="Stretch" Width="229">
+            <ListView x:Name="listMarkings" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Margin="375,13,10,10" >
                  <ListView.ContextMenu>
                     <ContextMenu>
                         <MenuItem Header="Edit" Name="EditContextMenu" />
@@ -102,7 +102,6 @@ Param
                     </GridView>
                 </ListView.View>
             </ListView>
-        </Grid>
     </Grid>
 </Window>
 '@
