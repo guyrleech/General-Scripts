@@ -66,6 +66,7 @@ Display a countdown timer starting at 3 minutes in a window but do not start it 
     @guyrleech 25/05/2020  Added edit and delete context menu items for markers
                            Fixed resizing regression
                            Added countdown timer with -beep and -countdown
+    @guyrleech 27/05/2020  Fixed bug with 01:00:00 countdown & added validation to countdown string passed/entered
 #>
 
 [CmdletBinding()]
@@ -252,9 +253,14 @@ $WPFtxtClock.Text = $(if( $stopWatch )
     {
         if( $countdown -match '^(\d{1,2}):(\d{1,2}):(\d{1,2})$' )
         {
+            if( [int]$Matches[2] -ge 60 -or [int]$Matches[3] -ge 60 )
+            {
+                Throw "Bad countdown time `"$countdown`""
+            }
             $countdownSeconds = [int]$Matches[1] * 3600 + [int]$Matches[2] * 60 + [int]$Matches[3]
             ## reconstitute in case didn't have leading zeroes e.g. 0:3:0
-            '{0:d2}:{1:d2}:{2:d2}' -f ([int][math]::Floor($countdownSeconds / 3600)) , ([int][math]::Floor($countdownSeconds / 60)) , ([int]($countdownSeconds % 60))
+            [timespan]$timespan = [timespan]::FromSeconds( $script:countdownSeconds )
+            '{0:d2}:{1:d2}:{2:d2}' -f [int][math]::Floor( $timespan.TotalHours ) , $timespan.Minutes , $timespan.Seconds
         }
         else
         {
@@ -301,7 +307,8 @@ $WPFbtnMark.Add_Click({
         {
             $secondsLeft = 0
         }
-        '{0:d2}:{1:d2}:{2:d2}' -f ([int][math]::Floor($secondsLeft / 3600)) , ([int][math]::Floor($secondsLeft / 60)) , ([int]($secondsLeft % 60))
+        [timespan]$timespan = [timespan]::FromSeconds( $secondsLeft )
+        '{0:d2}:{1:d2}:{2:d2}' -f [int][math]::Floor( $timespan.TotalHours ) , $timespan.Minutes , $timespan.Seconds
     }
     else
     {
@@ -398,9 +405,9 @@ $WPFbtnCountdown.Add_Click({
         $WPFbtnMarkerTextOk.Add_Click({
             $_.Handled = $true
             
-            if( $WPFtextBoxMarkerText.Text -notmatch '^(\d{1,2}):(\d{1,2}):(\d{1,2})$' )
+            if( $WPFtextBoxMarkerText.Text -notmatch '^(\d{1,2}):(\d{1,2}):(\d{1,2})$' -or [int]$Matches[2] -ge 60 -or [int]$Matches[3] -ge 60)
             {
-                [void][Windows.MessageBox]::Show( "Text `"$($WPFtextBoxMarkerText.Text)`" not in hh:mm:ss format" , 'Countdown Timer Error' , 'Ok' ,'Exclamation' )
+                [void][Windows.MessageBox]::Show( "Text `"$($WPFtextBoxMarkerText.Text)`" not in hh:mm:ss format or invalid values" , 'Countdown Timer Error' , 'Ok' ,'Exclamation' )
             }
             else
             {
@@ -416,9 +423,17 @@ $WPFbtnCountdown.Add_Click({
         {
             if( $WPFtextBoxMarkerText.Text -match '^(\d{1,2}):(\d{1,2}):(\d{1,2})$' )
             {
-                $script:countdownSeconds = [int]$Matches[1] * 3600 + [int]$Matches[2] * 60 + [int]$Matches[3]
-                ## reconstitute in case didn't have leading zeroes e.g. 0:3:0
-                $WPFtxtClock.Text = $script:countdown = '{0:d2}:{1:d2}:{2:d2}' -f ([int][math]::Floor($script:countdownSeconds / 3600)) , ([int][math]::Floor($script:countdownSeconds / 60)) , ([int]($script:countdownSeconds % 60))
+                if( [int]$Matches[2] -ge 60 -or [int]$Matches[3] -ge 60 )
+                {
+                    [void][Windows.MessageBox]::Show( "Text `"$($WPFtextBoxMarkerText.Text)`" contains invalid ours or minutes" , 'Countdown Timer Error' , 'Ok' ,'Exclamation' )
+                }
+                else
+                {
+                    $script:countdownSeconds = [int]$Matches[1] * 3600 + [int]$Matches[2] * 60 + [int]$Matches[3]
+                    ## reconstitute in case didn't have leading zeroes e.g. 0:3:0
+                    [timespan]$timespan = [timespan]::FromSeconds( $script:countdownSeconds )
+                    $WPFtxtClock.Text = $script:countdown = '{0:d2}:{1:d2}:{2:d2}' -f [int][math]::Floor( $timespan.TotalHours ) , $timespan.Minutes , $timespan.Seconds
+                }
             }
             $WPFbtnReset.IsEnabled = $true
             $WPFcheckboxBeep.IsEnabled = $true
@@ -449,10 +464,13 @@ $WPFDeleteContextMenu.Add_Click({
         elseif( $countdown )
         {
             [int]$secondsLeft = $countdownSeconds - $timer.Elapsed.TotalSeconds
-            [string]$display = '{0:d2}:{1:d2}:{2:d2}' -f ([int][math]::Floor($secondsLeft / 3600)) , ([int][math]::Floor($secondsLeft / 60)) , ([int]($secondsLeft % 60))
+            [timespan]$timespan = [timespan]::FromSeconds( $secondsLeft )
+            [string]$display = '{0:d2}:{1:d2}:{2:d2}' -f [int][math]::Floor( $timespan.TotalHours ) , $timespan.Minutes , $timespan.Seconds
             if( $secondsLeft -le 0 )
             {
                 $timer.Stop()
+                $WPFcheckboxRun.IsChecked = $false
+                $WPFbtnCountdown.IsEnabled = $true
                 if( $WPFcheckboxBeep.IsChecked -and $display -ne $script:lastTime )
                 {
                     [console]::Beep( 1000 , [int]$(if( $script:beep -gt 0 ) { $script:beep } else { 500 } ))
