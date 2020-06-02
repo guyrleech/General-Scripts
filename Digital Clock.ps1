@@ -25,6 +25,10 @@ A file to look for which will be then seen in a SysInternals Process Monitor tra
 
 Run a countdown timer starting at the value specified as hh:mm:ss
 
+.PARAMETER tenths
+
+Show tenths of a second for the clock
+
 .PARAMETER beep
 
 Emit a beep of the duration specified in milliseconds when the countdown timer expires
@@ -34,6 +38,12 @@ Emit a beep of the duration specified in milliseconds when the countdown timer e
 & '.\Digital Clock.ps1'
 
 Display an updating digital clock in a window
+
+.EXAMPLE
+
+& '.\Digital Clock.ps1' -tenths
+
+Display an updating digital clock in a window with tenths of a second granularity
 
 .EXAMPLE
 
@@ -67,6 +77,7 @@ Display a countdown timer starting at 3 minutes in a window but do not start it 
                            Fixed resizing regression
                            Added countdown timer with -beep and -countdown
     @guyrleech 27/05/2020  Fixed bug with 01:00:00 countdown & added validation to countdown string passed/entered
+    @guyrleech 02/06/2020  Added tenths seconds option to clock
 #>
 
 [CmdletBinding()]
@@ -78,6 +89,7 @@ Param
     [string]$markerFile ,
     [string]$countdown ,
     [switch]$notOnTop ,
+    [switch]$tenths ,
     [int]$beep
 )
 
@@ -237,6 +249,15 @@ if( ! ( $Form = New-Form -inputXaml $mainwindowXAML ) )
     Exit 1
 }
 
+[string]$dateFormat = $(if( $tenths )
+{
+    'HH:mm:ss.f'
+}
+else
+{
+    'HH:mm:ss'
+})
+
 $WPFcheckboxBeep.IsEnabled = $null -ne $PSBoundParameters[ 'countdown' ]
 $WPFcheckboxBeep.IsChecked = $null -ne $PSBoundParameters[ 'beep' ]
 
@@ -269,7 +290,7 @@ $WPFtxtClock.Text = $(if( $stopWatch )
     }
     else
     {
-        Get-Date -Format 'HH:mm:ss'
+        Get-Date -Format $dateFormat
     })
 
 $WPFbtnReset.Add_Click({ 
@@ -484,7 +505,7 @@ $WPFDeleteContextMenu.Add_Click({
         }
         else
         {
-            Get-Date -Format 'HH:mm:ss'
+            Get-Date -Format $dateFormat
         })
         if( $newTime -ne $script:lastTime )
         {
@@ -500,7 +521,7 @@ $form.Add_SourceInitialized({
     if( $formTimer = New-Object -TypeName System.Windows.Threading.DispatcherTimer )
     {
         ## need 0.1s granularity for the stopwatch but only just sub-second for the clock
-        $formTimer.Interval = $(if( $stopWatch ) { [Timespan]'00:00:00.100' } else { [Timespan]'00:00:00.5' })
+        $formTimer.Interval = $(if( $stopWatch -or $tenths ) { [Timespan]'00:00:00.100' } else { [Timespan]'00:00:00.5' })
         $formTimer.Add_Tick( $timerBlock )
         $formTimer.Start()
     }
