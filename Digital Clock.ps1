@@ -78,6 +78,7 @@ Display a countdown timer starting at 3 minutes in a window but do not start it 
                            Added countdown timer with -beep and -countdown
     @guyrleech 27/05/2020  Fixed bug with 01:00:00 countdown & added validation to countdown string passed/entered
     @guyrleech 02/06/2020  Added tenths seconds option to clock
+    @guyrleech 07/06/2020  Added insert above/below and save options for markers
 #>
 
 [CmdletBinding()]
@@ -121,6 +122,9 @@ Param
                 <ContextMenu>
                     <MenuItem Header="Edit" Name="EditContextMenu" />
                     <MenuItem Header="Delete" Name="DeleteContextMenu" />
+                    <MenuItem Header="Save" Name="SaveContextMenu" />
+                    <MenuItem Header="Insert Above" Name="InsertAboveContextMenu" />
+                    <MenuItem Header="Insert Below" Name="InsertBelowContextMenu" />
                 </ContextMenu>
             </ListView.ContextMenu>
             <ListView.View>
@@ -146,26 +150,63 @@ Param
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:Timer"
         mc:Ignorable="d"
-        Title="Marker Text" Height="285.211" Width="589.034" Name="Marker">
+        Title="Marker Text" Height="299.878" Width="589.034" Name="Marker">
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="31*"/>
             <ColumnDefinition Width="217*"/>
             <ColumnDefinition Width="544*"/>
         </Grid.ColumnDefinitions>
-        <TextBox x:Name="textBoxMarkerText" Grid.ColumnSpan="2" Grid.Column="1" HorizontalAlignment="Left" Height="97" Margin="0,31,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="533"/>
-        <Button x:Name="btnMarkerTextOk" Content="OK" Grid.Column="1" HorizontalAlignment="Left" Height="48" Margin="0,160,0,0" VerticalAlignment="Top" Width="120" IsDefault="True"/>
-        <Button x:Name="btnMarkerTextOk_Copy" Content="Cancel" Grid.Column="1" HorizontalAlignment="Left" Height="48" Margin="148,160,0,0" VerticalAlignment="Top" Width="120" Grid.ColumnSpan="2" IsCancel="True"/>
+        <Grid Grid.ColumnSpan="3" Margin="10,20,10,71">
+            <TextBox x:Name="textboxTimestamp" HorizontalAlignment="Stretch"  Margin="82,10,10,122" Text="TextBox" VerticalAlignment="Stretch" AllowDrop="False" />
+            <TextBox x:Name="textBoxMarkerText" HorizontalAlignment="Stretch"  Margin="82,62,10,10" TextWrapping="Wrap" VerticalAlignment="Stretch" SpellCheck.IsEnabled="True"/>
+            <Label Content="Timestamp" HorizontalAlignment="Left" Height="28" VerticalAlignment="Top" Width="70" Margin="-1,6,0,0"/>
+            <Label Content="Marker Text" HorizontalAlignment="Left" Height="24" Margin="2,82,0,0" VerticalAlignment="Top" Width="74" RenderTransformOrigin="0.464,1.5"/>
+        </Grid>
+        <Grid Grid.ColumnSpan="3" Margin="22,196,252,0">
+            <Button x:Name="btnMarkerTextOk" Content="OK" HorizontalAlignment="Left" Height="48" VerticalAlignment="Top" Width="120" IsDefault="True"/>
+            <Button x:Name="btnMarkerTextOk_Copy" Content="Cancel" HorizontalAlignment="Left" Height="48" Margin="148,0,10,10" VerticalAlignment="Top" Width="120" IsCancel="True"/>
+        </Grid>
+    </Grid>
+</Window>
+'@
+
+[string]$saveXAML = @'
+<Window x:Class="Timer.Save"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:Timer"
+        mc:Ignorable="d"
+        Title="Save" Height="220" Width="618.913">
+    <Grid>
+        <TextBox x:Name="textboxFilename" HorizontalAlignment="Left" Height="34" Margin="88,35,0,0" TextWrapping="Wrap" Text="TextBox" VerticalAlignment="Top" Width="415"/>
+        <Label Content="File name" HorizontalAlignment="Left" Height="34" Margin="10,35,0,0" VerticalAlignment="Top" Width="65"/>
+        <Grid Margin="88,86,218,72">
+            <RadioButton x:Name="radiobuttonOverwrite" Content="Overwrite" HorizontalAlignment="Left" Height="21" VerticalAlignment="Top" Width="181" GroupName="OverwriteAppend"/>
+            <RadioButton x:Name="radiobuttonAppend" Content="Append" HorizontalAlignment="Left" Height="21" Margin="124,0,0,0" VerticalAlignment="Top" Width="181" GroupName="OverwriteAppend" IsChecked="True"/>
+        </Grid>
+        <Grid Margin="10,117,20,19">
+            <Button x:Name="buttonSaveOk" Content="OK" HorizontalAlignment="Left" Height="43" VerticalAlignment="Top" Width="140" IsDefault="True"/>
+            <Button x:Name="buttonSaveCancel" Content="Cancel" HorizontalAlignment="Left" Height="43" Margin="171,0,0,0" VerticalAlignment="Top" Width="140" IsCancel="True"/>
+        </Grid>
+        <Button x:Name="buttonSaveBrowser" Content="..." HorizontalAlignment="Left" Height="34" Margin="524,35,0,0" VerticalAlignment="Top" Width="50"/>
+
     </Grid>
 </Window>
 '@
 
 Function Set-MarkerText
 {
+    [CmdletBinding()]
     Param
     (
         $item , ## if not passed then a new item otherwise editing
-        $timestamp
+        $timestamp ,
+        [int]$selected = -1 ,
+        [ValidateSet('Above','Below','None')]
+        [string]$insert = 'None'
     )
 
     if( $markerTextForm = New-Form -inputXaml $markerTextXAML )
@@ -181,7 +222,16 @@ Function Set-MarkerText
         {
             $WPFtextBoxMarkerText.Text = $item.Notes
         }
-        $WPFtextBoxMarkerText.Focus()
+        $WPFtextboxTimestamp.IsReadOnly = ( ! $insert -or $insert -eq 'None' ) ## only enabled for insertions
+        $WPFtextboxTimestamp.Text = $( if( $item ) { $item.timestamp } else { $timestamp })
+        if( $insert -eq 'None' )
+        {
+            $WPFtextBoxMarkerText.Focus()
+        }
+        else
+        {
+            $WPFtextboxTimestamp.Focus()
+        }
         $WPFMarker.Title = "$(if( $item ) { 'Edit' } else { 'Set' }) text for marker @ $(if( $item ) { $item.Timestamp } else { $Timestamp})"
 
         if( $markerTextForm.ShowDialog() )
@@ -191,9 +241,45 @@ Function Set-MarkerText
                 $item.Notes = $WPFtextBoxMarkerText.Text.ToString()
                 $WPFlistMarkings.Items.Refresh()
             }
-            else ## new item
+            elseif( ! $insert -or $insert -eq 'None' ) ## new item
             {
                 $null = $WPFlistMarkings.Items.Add( ([pscustomobject]@{ 'Timestamp' = $timestamp ; 'Notes' = $WPFtextBoxMarkerText.Text.ToString() }) )  
+            }
+            elseif( $insert -eq 'Above' -or $insert -eq 'Below' ) ## insert so need to get currently selected item so we know where to insert it
+            {
+                ## verify date format entered
+                if( [string]::IsNullOrEmpty( $WPFtextboxTimestamp.Text ) )
+                {
+                    [void][Windows.MessageBox]::Show( "Text `"$($WPFtextboxTimestamp.Text)`" not in correct format or invalid value" , 'Marker Error' , 'Ok' ,'Exclamation' )
+                }
+                else
+                {
+                    [string]$dateText = $WPFtextboxTimestamp.Text
+                    [string[]]$datestampParts = $dateText -split '\s'
+                    if( ! $datestampParts -or $datestampParts.Count -ne 2 -or $datestampParts[0] -notmatch '^\d\d/\d\d/\d\d(\d\d)?$' -or $datestampParts[1] -notmatch '^[012]\d:[0-5]\d:[0-5]\d(\.\d{1-6})?' )
+                    {
+                        ## see if just a time so we fill in date of selected item
+                        if( $datestampParts.Count -eq 1 -and $datestampParts[0] -match '^[012]\d:[0-5]\d:[0-5]\d(\.\d{1-6})?' )
+                        {
+                            $dateText = "{0} {1}" -f $(if( $selected -ge 0 ) { $WPFlistMarkings.SelectedItem.Timestamp.Split( ' ' )[0] } else { Get-Date -Format d } ), $datestampParts[0]
+                        }
+                        else
+                        {
+                            [void][Windows.MessageBox]::Show( "Text `"$($WPFtextboxTimestamp.Text)`" not in correct format or invalid value" , 'Marker Error' , 'Ok' ,'Exclamation' )
+                        }
+                    }
+                    
+                    if( $dateText )
+                    {
+                        [int]$position = $(if( $insert -eq 'Above' ) { $selected } else { $selected + 1 } )
+                        if( $position -lt 0 )
+                        {
+                            $position = 0
+                        }
+
+                        $null = $WPFlistMarkings.Items.Insert( $position , ([pscustomobject]@{ 'Timestamp' = $dateText ; 'Notes' = $WPFtextBoxMarkerText.Text.ToString() }) )
+                    }
+                }
             }
         }
     }
@@ -265,6 +351,7 @@ $form.TopMost = ! $notOnTop
 $form.Title = $(if( $stopWatch ) { 'Guy''s Stopwatch' } elseif( $countdown ) { 'Guy''s Countdown Timer' } else { 'Guy''s Clock' })
 
 [int]$countdownSeconds = 0
+[string]$global:lastfilename = $null
 
 $WPFtxtClock.Text = $(if( $stopWatch )
     {
@@ -333,7 +420,7 @@ $WPFbtnMark.Add_Click({
     }
     else
     {
-        Get-Date -Format 'HH:mm:ss.ffffff'
+        "{0} {1}" -f (Get-Date -Format d) , (Get-Date -Format 'HH:mm:ss.ffffff')
     } )
     
     Write-Verbose -Message "Mark button pressed, timestamp $timestamp"
@@ -460,6 +547,64 @@ $WPFbtnCountdown.Add_Click({
             $WPFcheckboxBeep.IsEnabled = $true
         }
     }
+})
+
+$WPFSaveContextMenu.Add_Click({
+    $_.Handled = $true
+    
+    if( ! $WPFlistMarkings.Items.Count )
+    {
+        [void][Windows.MessageBox]::Show( "Nothing to save" , 'Save Error' , 'Ok' ,'Exclamation' )
+    }
+    elseif( $saveForm = New-Form -inputXaml $saveXAML )
+    {
+        $WPFbuttonSaveBrowser.Add_Click({
+            $_.Handled = $true
+            if( $fileBrowser = New-Object -TypeName System.Windows.Forms.OpenFileDialog )
+            {
+                $fileBrowser.InitialDirectory = Get-Location -PSProvider FileSystem | Select-Object -ExpandProperty Path
+                if( ( $file = $fileBrowser.ShowDialog() ) -eq 'OK' )
+                {
+                    $WPFtextboxFilename.Text = $fileBrowser.FileName
+                }
+            }
+        })
+        $WPFbuttonSaveOk.Add_Click({
+            if( [string]::IsNullOrEmpty( $WPFtextboxFilename.Text.Trim() ) )
+            {
+                [void][Windows.MessageBox]::Show( "Must specify a file name" , 'Save Error' , 'Ok' ,'Exclamation' )
+            }
+            else
+            {
+                $saveForm.DialogResult = $true 
+                $saveForm.Close()
+            }
+        })
+
+        $WPFtextboxFilename.Text = $global:lastfilename
+        $saveForm.Topmost = $true
+
+        if( $saveForm.ShowDialog() )
+        {
+            $saveError = $null
+            $WPFlistMarkings.Items | Out-File -FilePath ($WPFtextboxFilename.Text -replace '"') -Append:$wpfradiobuttonAppend.IsChecked -ErrorVariable saveError
+            $global:lastfilename = $WPFtextboxFilename.Text
+            if( $saveError )
+            {
+                [void][Windows.MessageBox]::Show( "Must specify a file name" , 'Save Error' , 'Ok' ,'Exclamation' )
+            }
+        }
+    }
+})
+
+$WPFInsertAboveContextMenu.Add_Click({
+    $_.Handled = $true
+    Set-MarkerText -insert Above -selected $WPFlistMarkings.SelectedIndex
+})
+
+$WPFInsertBelowContextMenu.Add_Click({
+    $_.Handled = $true
+    Set-MarkerText -insert Below -selected $WPFlistMarkings.SelectedIndex
 })
 
 $WPFDeleteContextMenu.Add_Click({
