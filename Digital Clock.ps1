@@ -158,10 +158,10 @@ Param
             <ColumnDefinition Width="544*"/>
         </Grid.ColumnDefinitions>
         <Grid Grid.ColumnSpan="3" Margin="10,20,10,71">
-            <TextBox x:Name="textboxTimestamp" HorizontalAlignment="Stretch"  Margin="82,10,10,122" Text="TextBox" VerticalAlignment="Stretch" AllowDrop="False" />
+            <TextBox x:Name="textboxTimestamp" HorizontalAlignment="Stretch"  Margin="82,10,10,122" VerticalAlignment="Stretch" AllowDrop="False" />
             <TextBox x:Name="textBoxMarkerText" HorizontalAlignment="Stretch"  Margin="82,62,10,10" TextWrapping="Wrap" VerticalAlignment="Stretch" SpellCheck.IsEnabled="True"/>
-            <Label Content="Timestamp" HorizontalAlignment="Left" Height="28" VerticalAlignment="Top" Width="70" Margin="-1,6,0,0"/>
-            <Label Content="Marker Text" HorizontalAlignment="Left" Height="24" Margin="2,82,0,0" VerticalAlignment="Top" Width="74" RenderTransformOrigin="0.464,1.5"/>
+            <Label x:Name="labelTimestamp" Content="Timestamp" HorizontalAlignment="Left" Height="28" VerticalAlignment="Top" Width="70" Margin="0,17,0,0"/>
+            <Label x:Name="labelMarkText" Content="Marker Text" HorizontalAlignment="Left" Height="24" Margin="2,82,0,0" VerticalAlignment="Top" Width="74" RenderTransformOrigin="0.464,1.5"/>
         </Grid>
         <Grid Grid.ColumnSpan="3" Margin="22,196,252,0">
             <Button x:Name="btnMarkerTextOk" Content="OK" HorizontalAlignment="Left" Height="48" VerticalAlignment="Top" Width="120" IsDefault="True"/>
@@ -256,7 +256,7 @@ Function Set-MarkerText
                 {
                     [string]$dateText = $WPFtextboxTimestamp.Text
                     [string[]]$datestampParts = $dateText -split '\s'
-                    if( ! $datestampParts -or $datestampParts.Count -ne 2 -or $datestampParts[0] -notmatch '^\d\d/\d\d/\d\d(\d\d)?$' -or $datestampParts[1] -notmatch '^[012]\d:[0-5]\d:[0-5]\d(\.\d{1-6})?' )
+                    if( [string]::IsNullOrEmpty( $countdown ) -and ( ! $datestampParts -or $datestampParts.Count -ne 2 -or $datestampParts[0] -notmatch '^\d\d/\d\d/\d\d(\d\d)?$' -or $datestampParts[1] -notmatch '^[012]\d:[0-5]\d:[0-5]\d(\.\d{1-6})?' ) )
                     {
                         ## see if just a time so we fill in date of selected item
                         if( $datestampParts.Count -eq 1 -and $datestampParts[0] -match '^[012]\d:[0-5]\d:[0-5]\d(\.\d{1-6})?' )
@@ -513,9 +513,9 @@ $WPFbtnCountdown.Add_Click({
         $WPFbtnMarkerTextOk.Add_Click({
             $_.Handled = $true
             
-            if( $WPFtextBoxMarkerText.Text -notmatch '^(\d{1,2}):(\d{1,2}):(\d{1,2})$' -or [int]$Matches[2] -ge 60 -or [int]$Matches[3] -ge 60)
+            if( $WPFtextboxTimestamp.Text -notmatch '^(\d{1,2}):(\d{1,2}):(\d{1,2})$' -or [int]$Matches[2] -ge 60 -or [int]$Matches[3] -ge 60)
             {
-                [void][Windows.MessageBox]::Show( "Text `"$($WPFtextBoxMarkerText.Text)`" not in hh:mm:ss format or invalid values" , 'Countdown Timer Error' , 'Ok' ,'Exclamation' )
+                [void][Windows.MessageBox]::Show( "Text `"$($WPFtextboxTimestamp.Text)`" not in hh:mm:ss format or invalid values" , 'Countdown Timer Error' , 'Ok' ,'Exclamation' )
             }
             else
             {
@@ -523,17 +523,20 @@ $WPFbtnCountdown.Add_Click({
                 $markerTextForm.Close()
             }})
         
-        $WPFtextBoxMarkerText.Text = $countdown
-        $WPFtextBoxMarkerText.Focus()
+        $WPFtextboxTimestamp.Text = $countdown
+        $WPFtextboxTimestamp.Focus()
+        $WPFtextBoxMarkerText.IsEnabled = $false
         $WPFMarker.Title = "Enter countdown time in hh:mm:ss"
+        $WPFlabelTimestamp.Content = 'Countdown'
+        $WPFlabelMarkText.Content = ''
 
         if( $markerTextForm.ShowDialog() )
         {
-            if( $WPFtextBoxMarkerText.Text -match '^(\d{1,2}):(\d{1,2}):(\d{1,2})$' )
+            if( $WPFtextboxTimestamp.Text -match '^(\d{1,2}):(\d{1,2}):(\d{1,2})$' )
             {
                 if( [int]$Matches[2] -ge 60 -or [int]$Matches[3] -ge 60 )
                 {
-                    [void][Windows.MessageBox]::Show( "Text `"$($WPFtextBoxMarkerText.Text)`" contains invalid ours or minutes" , 'Countdown Timer Error' , 'Ok' ,'Exclamation' )
+                    [void][Windows.MessageBox]::Show( "Text `"$($WPFtextboxTimestamp.Text)`" contains invalid ours or minutes" , 'Countdown Timer Error' , 'Ok' ,'Exclamation' )
                 }
                 else
                 {
