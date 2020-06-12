@@ -35,7 +35,11 @@ Read 1KB of data starting at offset 12798606 in the specified file and show 1KB 
 
 Read 1KB of data starting at offset 12798606 in the specified file and show 1KB of this
 
-.EXAMPLE
+.NOTES
+
+Modification History:
+
+12/06/20  @guyrleech  Bug fix procmon detail regex & add test for offset too large
 
 #>
 
@@ -60,8 +64,9 @@ if( $fileStream = New-Object -TypeName System.IO.FileStream( $path , [System.IO.
     if( $PSBoundParameters[ 'procmonDetail' ] )
     {
         ## Offset: 10,014,174, Length: 18
-        if( $procmonDetail -match 'Offset:\s*(.*)Length:\s*(.*)' )
+        if( $procmonDetail -match 'Offset:\s*([\d,]*).*Length:\s*([\d,]*)' )
         {
+            ## [int] conversion copes with commas so no need to remove
             $offset = $Matches[1] -as [int]
             $count = $Matches[2] -as [int]
             if( $PSBoundParameters[ 'minimumCount' ] -and $count -lt $minimumCount )
@@ -75,6 +80,13 @@ if( $fileStream = New-Object -TypeName System.IO.FileStream( $path , [System.IO.
         }
     }
     
+    Write-Verbose -Message "Seeking to $offset and reading $count bytes"
+
+    if( $offset -gt $fileStream.Length )
+    {
+        Throw "Offset $offset is too large, file is only $($fileStream.Length) bytes"
+    }
+
     $null = $fileStream.Seek( $offset , [System.IO.SeekOrigin]::Begin )
 
     $chunk = New-Object byte[] $count
