@@ -9,6 +9,8 @@
     26/11/18  GRL   Put '<Folder>' in results when item is a folder as cannot checksum a folder, only files
 
     05/12/18  GRL   Don't show GUI if environment variable CHECKSUM_ALGORITHM is set as it uses that as the checksum algorithm
+
+    27/09/20  GRL   Added support for folders
 #>
 
 [string]$mainwindowXAML = @'
@@ -77,6 +79,8 @@ if( ! $args -or ! $args.Count )
 
 [string]$algorithm = $env:CHECKSUM_ALGORITHM
 
+## if algorithm not in %CHECKSUM_ALGORITHM% then prompt via GUI
+
 if( [string]::IsNullOrEmpty( $algorithm ) )
 {
     $null = [void][Reflection.Assembly]::LoadWithPartialName('Presentationframework')
@@ -118,29 +122,32 @@ if( ! [string]::IsNullOrEmpty( $algorithm ) )
 {
     [array]$results = @( $args | ForEach-Object `
     {
-        [string]$result = `
-            try
+        $item = $_
+        try
+        {
+            if( Test-Path -Path $item -PathType Container -ErrorAction SilentlyContinue )
             {
-                if( Test-Path -Path $_ -PathType Container -ErrorAction SilentlyContinue )
+                Get-ChildItem -Path $item -File -Force -Recurse | ForEach-Object -Process `
                 {
-                    '<Folder>'
-                }
-                else
-                {
-                    Get-FileHash -Path $_ -Algorithm $algorithm -ErrorAction Stop | Select -ExpandProperty Hash
+                    $hash = Get-FileHash -Path $_.FullName -Algorithm $algorithm -ErrorAction Stop | Select -ExpandProperty Hash
+                    [pscustomobject][ordered]@{ 'File' = $_.FullName ; "$algorithm checksum" = $hash }
                 }
             }
-            catch
+            else
             {
-                $_.ToString()
+                $hash = Get-FileHash -Path $item -Algorithm $algorithm -ErrorAction Stop | Select -ExpandProperty Hash
+                [pscustomobject][ordered]@{ 'File' = $item; "$algorithm checksum" = $hash }
             }
-        [pscustomobject][ordered]@{ 'File' = $_ ; "$algorithm checksum" = $result }
+        }
+        catch
+        {
+            [pscustomobject][ordered]@{ 'File' = $item; "$algorithm checksum" = $_.ToString() }
+        }
     })
 
     if( $results -and $results.Count )
     {
-        $selected = $results | Out-GridView -Title "$algorithm checksums of $($args.Count) files" -PassThru
-        if( $selected )
+        if( $selected = $results | Out-GridView -Title "$algorithm checksums of $($args.Count) files" -PassThru )
         {
             $selected | Set-Clipboard
         }
