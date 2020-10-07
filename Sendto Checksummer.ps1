@@ -11,6 +11,8 @@
     05/12/18  GRL   Don't show GUI if environment variable CHECKSUM_ALGORITHM is set as it uses that as the checksum algorithm
 
     27/09/20  GRL   Added support for folders
+
+    07/10/20  GRL   Added file size, last write time and file version properties to output
 #>
 
 [string]$mainwindowXAML = @'
@@ -129,14 +131,21 @@ if( ! [string]::IsNullOrEmpty( $algorithm ) )
             {
                 Get-ChildItem -Path $item -File -Force -Recurse | ForEach-Object -Process `
                 {
-                    $hash = Get-FileHash -Path $_.FullName -Algorithm $algorithm -ErrorAction Stop | Select -ExpandProperty Hash
-                    [pscustomobject][ordered]@{ 'File' = $_.FullName ; "$algorithm checksum" = $hash }
+                    $hash = Get-FileHash -Path $_.FullName -Algorithm $algorithm -ErrorAction Stop | Select-Object -ExpandProperty Hash
+                    $fileVersion = $_ | Select-Object -ExpandProperty VersionInfo -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FileVersion
+                    [pscustomobject][ordered]@{ 'File' = $_.FullName ; "$algorithm checksum" = $hash ; "Size (MB)" = [math]::Round( $_.Length / 1MB , 1 ) ; 'File Version' = $fileVersion ; 'Modified' = $_.LastWriteTime }
                 }
             }
             else
             {
-                $hash = Get-FileHash -Path $item -Algorithm $algorithm -ErrorAction Stop | Select -ExpandProperty Hash
-                [pscustomobject][ordered]@{ 'File' = $item; "$algorithm checksum" = $hash }
+                $hash = Get-FileHash -Path $item -Algorithm $algorithm -ErrorAction Stop | Select-Object -ExpandProperty Hash
+                $lastModified = $fileVersion = $null
+                if( $properties = Get-ItemProperty -Path $item -ErrorAction SilentlyContinue )
+                {
+                    $fileVersion = $properties | Select-Object -ExpandProperty VersionInfo -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FileVersion
+                    $modified = $properties.LastWriteTime
+                }
+                [pscustomobject][ordered]@{ 'File' = $item; "$algorithm checksum" = $hash ; "Size (MB)" = [math]::Round( $_.Length / 1MB , 1 ) ; 'File Version' = $fileVersion ; 'Modified' = $lastModified }
             }
         }
         catch
@@ -147,7 +156,7 @@ if( ! [string]::IsNullOrEmpty( $algorithm ) )
 
     if( $results -and $results.Count )
     {
-        if( $selected = $results | Out-GridView -Title "$algorithm checksums of $($args.Count) files" -PassThru )
+        if( $selected = $results | Out-GridView -Title "$algorithm checksums of $($results.Count) files" -PassThru )
         {
             $selected | Set-Clipboard
         }
