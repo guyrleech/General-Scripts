@@ -17,6 +17,10 @@ Start the stopwatch immediately
 
 Do not place the window on top of all other windows
 
+.PARAMETER expiredMessage
+
+Text to display in a popup when the countdown timer expires
+
 .PARAMETER markerFile
 
 A file to look for which will be then seen in a SysInternals Process Monitor trace as a CreateFile operation to allow cross referencing to that
@@ -79,6 +83,8 @@ Display a countdown timer starting at 3 minutes in a window but do not start it 
     @guyrleech 27/05/2020  Fixed bug with 01:00:00 countdown & added validation to countdown string passed/entered
     @guyrleech 02/06/2020  Added tenths seconds option to clock
     @guyrleech 07/06/2020  Added insert above/below and save options for markers
+    @guyrleech 12/10/2020  Added message box for timer expiry text
+                           Fixed countdown timer re-run bug where timer not reset so expires immediately
 #>
 
 [CmdletBinding()]
@@ -89,6 +95,7 @@ Param
     [switch]$start ,
     [string]$markerFile ,
     [string]$countdown ,
+    [string]$expiredMessage ,
     [switch]$notOnTop ,
     [switch]$tenths ,
     [int]$beep
@@ -160,8 +167,8 @@ Param
         <Grid Grid.ColumnSpan="3" Margin="10,20,10,71">
             <TextBox x:Name="textboxTimestamp" HorizontalAlignment="Stretch"  Margin="82,10,10,122" VerticalAlignment="Stretch" AllowDrop="False" />
             <TextBox x:Name="textBoxMarkerText" HorizontalAlignment="Stretch"  Margin="82,62,10,10" TextWrapping="Wrap" VerticalAlignment="Stretch" SpellCheck.IsEnabled="True"/>
-            <Label x:Name="labelTimestamp" Content="Timestamp" HorizontalAlignment="Left" Height="28" VerticalAlignment="Top" Width="70" Margin="0,17,0,0"/>
-            <Label x:Name="labelMarkText" Content="Marker Text" HorizontalAlignment="Left" Height="24" Margin="2,82,0,0" VerticalAlignment="Top" Width="74" RenderTransformOrigin="0.464,1.5"/>
+            <Label x:Name="labelTimestamp" Content="Timestamp" HorizontalAlignment="Left" Height="28" VerticalAlignment="Top" Width="76" Margin="0,17,0,0"/>
+            <Label x:Name="labelMarkText" Content="Marker Text" HorizontalAlignment="Left" Height="28" Margin="0,82,0,0" VerticalAlignment="Top" Width="76" RenderTransformOrigin="0.464,1.5"/>
         </Grid>
         <Grid Grid.ColumnSpan="3" Margin="22,196,252,0">
             <Button x:Name="btnMarkerTextOk" Content="OK" HorizontalAlignment="Left" Height="48" VerticalAlignment="Top" Width="120" IsDefault="True"/>
@@ -321,6 +328,52 @@ Function New-Form
     }
 
     $form
+}
+
+Function Set-ForegroundWindow
+{
+    Param
+    (
+        [Parameter(Mandatory)]
+        [int]$thePid = $pid
+    )
+
+    ## Windows may not be visible so make it so
+    $pinvokeCode = @'
+        [DllImport("user32.dll", SetLastError=true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow); 
+        [DllImport("user32.dll", SetLastError=true)]
+        public static extern int SetForegroundWindow(IntPtr hwnd);
+'@
+
+    if( ! ([System.Management.Automation.PSTypeName]'Win32.User32').Type )
+    {
+        Add-Type -MemberDefinition $pinvokeCode -Name 'User32' -Namespace 'Win32' -UsingNamespace System.Text -ErrorAction Stop
+    }
+
+    if( $process = Get-Process -Id $thePid )
+    {
+        if( ( [intptr]$windowHandle = $process.MainWindowHandle ) -and $windowHandle -ne [intptr]::Zero )
+        {
+            [int]$operation = 9
+            [bool]$setForegroundWindow = [win32.user32]::ShowWindowAsync( $windowHandle , $operation ) ; $lastError = [ComponentModel.Win32Exception][Runtime.InteropServices.Marshal]::GetLastWin32Error()
+            if( ! $setForegroundWindow )
+            {
+                Write-Warning -Message "Failed to set window to foreground for process $($process.Name) (pid $($process.Id)): $lastError"
+            }
+            else
+            {
+                [int]$foregroundWindow = [win32.user32]::SetForegroundWindow( $windowHandle ); $lastError = [ComponentModel.Win32Exception][Runtime.InteropServices.Marshal]::GetLastWin32Error()
+                Write-Verbose -Message "Operation $operation on $($process.Name) (pid $($process.Id)) succeeded"
+            }
+        }
+        else
+        {
+            Write-Warning -Message "No main window handle for process $($process.Name) (pid $($process.Id))"
+        }
+    }
+    ## else ## no process for pid but will have errored
 }
 
 Add-Type -AssemblyName PresentationCore,PresentationFramework,WindowsBase,System.Windows.Forms
@@ -525,10 +578,11 @@ $WPFbtnCountdown.Add_Click({
         
         $WPFtextboxTimestamp.Text = $countdown
         $WPFtextboxTimestamp.Focus()
-        $WPFtextBoxMarkerText.IsEnabled = $false
+        ##$WPFtextBoxMarkerText.IsEnabled = $false
         $WPFMarker.Title = "Enter countdown time in hh:mm:ss"
+        $WPFtextBoxMarkerText.Text = $script:expiredMessage
         $WPFlabelTimestamp.Content = 'Countdown'
-        $WPFlabelMarkText.Content = ''
+        $WPFlabelMarkText.Content = 'Expired Text'
 
         if( $markerTextForm.ShowDialog() )
         {
@@ -541,6 +595,7 @@ $WPFbtnCountdown.Add_Click({
                 else
                 {
                     $script:countdownSeconds = [int]$Matches[1] * 3600 + [int]$Matches[2] * 60 + [int]$Matches[3]
+                    $script:expiredMessage = $WPFtextBoxMarkerText.Text
                     ## reconstitute in case didn't have leading zeroes e.g. 0:3:0
                     [timespan]$timespan = [timespan]::FromSeconds( $script:countdownSeconds )
                     $WPFtxtClock.Text = $script:countdown = '{0:d2}:{1:d2}:{2:d2}' -f [int][math]::Floor( $timespan.TotalHours ) , $timespan.Minutes , $timespan.Seconds
@@ -632,7 +687,7 @@ $WPFDeleteContextMenu.Add_Click({
         }
         elseif( $countdown )
         {
-            [int]$secondsLeft = $countdownSeconds - $timer.Elapsed.TotalSeconds
+            [double]$secondsLeft = $countdownSeconds - $timer.Elapsed.TotalSeconds
             [timespan]$timespan = [timespan]::FromSeconds( $secondsLeft )
             [string]$display = '{0:d2}:{1:d2}:{2:d2}' -f [int][math]::Floor( $timespan.TotalHours ) , $timespan.Minutes , $timespan.Seconds
             if( $secondsLeft -le 0 )
@@ -644,10 +699,17 @@ $WPFDeleteContextMenu.Add_Click({
                 {
                     [console]::Beep( 1000 , [int]$(if( $script:beep -gt 0 ) { $script:beep } else { 500 } ))
                 }
+                Set-ForegroundWindow -thePid $pid
+                if( ! [string]::IsNullOrEmpty( $script:expiredMessage ) )
+                {
+                    [void][Windows.MessageBox]::Show(  $script:expiredMessage , 'Countdown Timer Expired' , 'Ok' ,'Information' )
+                }
                 if( $secondsLeft -lt 0 )
                 {
                     $secondsLeft = 0
                 }
+                $display = $script:countdown
+                $timer.Reset()
             }
             $display
         }
@@ -700,3 +762,77 @@ if( $WPFlistMarkings.Items -and $WPFlistMarkings.Items.Count )
 {
     $WPFlistMarkings.Items
 }
+
+# SIG # Begin signature block
+# MIINRQYJKoZIhvcNAQcCoIINNjCCDTICAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
+# gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUqDyqgk7YQe5uiXfFN4xP2gEy
+# ajigggqHMIIFMDCCBBigAwIBAgIQBAkYG1/Vu2Z1U0O1b5VQCDANBgkqhkiG9w0B
+# AQsFADBlMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYD
+# VQQLExB3d3cuZGlnaWNlcnQuY29tMSQwIgYDVQQDExtEaWdpQ2VydCBBc3N1cmVk
+# IElEIFJvb3QgQ0EwHhcNMTMxMDIyMTIwMDAwWhcNMjgxMDIyMTIwMDAwWjByMQsw
+# CQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3d3cu
+# ZGlnaWNlcnQuY29tMTEwLwYDVQQDEyhEaWdpQ2VydCBTSEEyIEFzc3VyZWQgSUQg
+# Q29kZSBTaWduaW5nIENBMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA
+# +NOzHH8OEa9ndwfTCzFJGc/Q+0WZsTrbRPV/5aid2zLXcep2nQUut4/6kkPApfmJ
+# 1DcZ17aq8JyGpdglrA55KDp+6dFn08b7KSfH03sjlOSRI5aQd4L5oYQjZhJUM1B0
+# sSgmuyRpwsJS8hRniolF1C2ho+mILCCVrhxKhwjfDPXiTWAYvqrEsq5wMWYzcT6s
+# cKKrzn/pfMuSoeU7MRzP6vIK5Fe7SrXpdOYr/mzLfnQ5Ng2Q7+S1TqSp6moKq4Tz
+# rGdOtcT3jNEgJSPrCGQ+UpbB8g8S9MWOD8Gi6CxR93O8vYWxYoNzQYIH5DiLanMg
+# 0A9kczyen6Yzqf0Z3yWT0QIDAQABo4IBzTCCAckwEgYDVR0TAQH/BAgwBgEB/wIB
+# ADAOBgNVHQ8BAf8EBAMCAYYwEwYDVR0lBAwwCgYIKwYBBQUHAwMweQYIKwYBBQUH
+# AQEEbTBrMCQGCCsGAQUFBzABhhhodHRwOi8vb2NzcC5kaWdpY2VydC5jb20wQwYI
+# KwYBBQUHMAKGN2h0dHA6Ly9jYWNlcnRzLmRpZ2ljZXJ0LmNvbS9EaWdpQ2VydEFz
+# c3VyZWRJRFJvb3RDQS5jcnQwgYEGA1UdHwR6MHgwOqA4oDaGNGh0dHA6Ly9jcmw0
+# LmRpZ2ljZXJ0LmNvbS9EaWdpQ2VydEFzc3VyZWRJRFJvb3RDQS5jcmwwOqA4oDaG
+# NGh0dHA6Ly9jcmwzLmRpZ2ljZXJ0LmNvbS9EaWdpQ2VydEFzc3VyZWRJRFJvb3RD
+# QS5jcmwwTwYDVR0gBEgwRjA4BgpghkgBhv1sAAIEMCowKAYIKwYBBQUHAgEWHGh0
+# dHBzOi8vd3d3LmRpZ2ljZXJ0LmNvbS9DUFMwCgYIYIZIAYb9bAMwHQYDVR0OBBYE
+# FFrEuXsqCqOl6nEDwGD5LfZldQ5YMB8GA1UdIwQYMBaAFEXroq/0ksuCMS1Ri6en
+# IZ3zbcgPMA0GCSqGSIb3DQEBCwUAA4IBAQA+7A1aJLPzItEVyCx8JSl2qB1dHC06
+# GsTvMGHXfgtg/cM9D8Svi/3vKt8gVTew4fbRknUPUbRupY5a4l4kgU4QpO4/cY5j
+# DhNLrddfRHnzNhQGivecRk5c/5CxGwcOkRX7uq+1UcKNJK4kxscnKqEpKBo6cSgC
+# PC6Ro8AlEeKcFEehemhor5unXCBc2XGxDI+7qPjFEmifz0DLQESlE/DmZAwlCEIy
+# sjaKJAL+L3J+HNdJRZboWR3p+nRka7LrZkPas7CM1ekN3fYBIM6ZMWM9CBoYs4Gb
+# T8aTEAb8B4H6i9r5gkn3Ym6hU/oSlBiFLpKR6mhsRDKyZqHnGKSaZFHvMIIFTzCC
+# BDegAwIBAgIQBP3jqtvdtaueQfTZ1SF1TjANBgkqhkiG9w0BAQsFADByMQswCQYD
+# VQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3d3cuZGln
+# aWNlcnQuY29tMTEwLwYDVQQDEyhEaWdpQ2VydCBTSEEyIEFzc3VyZWQgSUQgQ29k
+# ZSBTaWduaW5nIENBMB4XDTIwMDcyMDAwMDAwMFoXDTIzMDcyNTEyMDAwMFowgYsx
+# CzAJBgNVBAYTAkdCMRIwEAYDVQQHEwlXYWtlZmllbGQxJjAkBgNVBAoTHVNlY3Vy
+# ZSBQbGF0Zm9ybSBTb2x1dGlvbnMgTHRkMRgwFgYDVQQLEw9TY3JpcHRpbmdIZWF2
+# ZW4xJjAkBgNVBAMTHVNlY3VyZSBQbGF0Zm9ybSBTb2x1dGlvbnMgTHRkMIIBIjAN
+# BgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAr20nXdaAALva07XZykpRlijxfIPk
+# TUQFAxQgXTW2G5Jc1YQfIYjIePC6oaD+3Zc2WN2Jrsc7bj5Qe5Nj4QHHHf3jopLy
+# g8jXl7Emt1mlyzUrtygoQ1XpBBXnv70dvZibro6dXmK8/M37w5pEAj/69+AYM7IO
+# Fz2CrTIrQjvwjELSOkZ2o+z+iqfax9Z1Tv82+yg9iDHnUxZWhaiEXk9BFRv9WYsz
+# qTXQTEhv8fmUI2aZX48so4mJhNGu7Vp1TGeCik1G959Qk7sFh3yvRugjY0IIXBXu
+# A+LRT00yjkgMe8XoDdaBoIn5y3ZrQ7bCVDjoTrcn/SqfHvhEEMj1a1f0zQIDAQAB
+# o4IBxTCCAcEwHwYDVR0jBBgwFoAUWsS5eyoKo6XqcQPAYPkt9mV1DlgwHQYDVR0O
+# BBYEFE16ovlqIk5uX2JQy6og0OCPrsnJMA4GA1UdDwEB/wQEAwIHgDATBgNVHSUE
+# DDAKBggrBgEFBQcDAzB3BgNVHR8EcDBuMDWgM6Axhi9odHRwOi8vY3JsMy5kaWdp
+# Y2VydC5jb20vc2hhMi1hc3N1cmVkLWNzLWcxLmNybDA1oDOgMYYvaHR0cDovL2Ny
+# bDQuZGlnaWNlcnQuY29tL3NoYTItYXNzdXJlZC1jcy1nMS5jcmwwTAYDVR0gBEUw
+# QzA3BglghkgBhv1sAwEwKjAoBggrBgEFBQcCARYcaHR0cHM6Ly93d3cuZGlnaWNl
+# cnQuY29tL0NQUzAIBgZngQwBBAEwgYQGCCsGAQUFBwEBBHgwdjAkBggrBgEFBQcw
+# AYYYaHR0cDovL29jc3AuZGlnaWNlcnQuY29tME4GCCsGAQUFBzAChkJodHRwOi8v
+# Y2FjZXJ0cy5kaWdpY2VydC5jb20vRGlnaUNlcnRTSEEyQXNzdXJlZElEQ29kZVNp
+# Z25pbmdDQS5jcnQwDAYDVR0TAQH/BAIwADANBgkqhkiG9w0BAQsFAAOCAQEAU9zO
+# 9UpTkPL8DNrcbIaf1w736CgWB5KRQsmp1mhXbGECUCCpOCzlYFCSeiwH9MT0je3W
+# aYxWqIpUMvAI8ndFPVDp5RF+IJNifs+YuLBcSv1tilNY+kfa2OS20nFrbFfl9QbR
+# 4oacz8sBhhOXrYeUOU4sTHSPQjd3lpyhhZGNd3COvc2csk55JG/h2hR2fK+m4p7z
+# sszK+vfqEX9Ab/7gYMgSo65hhFMSWcvtNO325mAxHJYJ1k9XEUTmq828ZmfEeyMq
+# K9FlN5ykYJMWp/vK8w4c6WXbYCBXWL43jnPyKT4tpiOjWOI6g18JMdUxCG41Hawp
+# hH44QHzE1NPeC+1UjTGCAigwggIkAgEBMIGGMHIxCzAJBgNVBAYTAlVTMRUwEwYD
+# VQQKEwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5jb20xMTAv
+# BgNVBAMTKERpZ2lDZXJ0IFNIQTIgQXNzdXJlZCBJRCBDb2RlIFNpZ25pbmcgQ0EC
+# EAT946rb3bWrnkH02dUhdU4wCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwxCjAI
+# oAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGCNwIB
+# CzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFD7KurDAvwB9kPzCsmu1
+# TUkurNbZMA0GCSqGSIb3DQEBAQUABIIBAGmjiN5kT3Ztvoc2dI5PHtWigi8ma8My
+# EPUSIsbwcslHOd3H+E9f06hbF9Mbu83YCNTmHGfjBtOvoTMpggS72bmyIY6MJqtc
+# kLEKEDAAZCIE+8yOsP8Aok9u/7bEssWAYBOWYO94tGGip9y5yAjkl1s7YRTIyDK2
+# GtC+ueMyUe74hAn+nqrY2T13dvnOx1pEL3c62xdl8oBXedcZLf7MAViRMl9HTYfA
+# Wakc/bikxU6sY4P8RqS4xNSVQ2fuvl5ZPP0uISZYto5xDRKUx7W61Q3n1weXwly6
+# UytN3tMo0K6Z2ksDQf6Mlwi/j+zVPmUnTqY5EbIw4wqD6NoE+0ByxdA=
+# SIG # End signature block
