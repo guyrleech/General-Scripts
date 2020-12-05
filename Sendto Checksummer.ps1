@@ -13,6 +13,8 @@
     27/09/20  GRL   Added support for folders
 
     07/10/20  GRL   Added file size, last write time and file version, or product version if file version empty, properties to output
+
+    05/12/20  GRL   Minimise PowerShell window if parent is explorer so sendto shortcut doesn't have to be minimised but Out-Gridview window will not be minimised as no easy way to restore grid view windows
 #>
 
 [string]$mainwindowXAML = @'
@@ -37,7 +39,6 @@
         <Label Content="Algorithm" HorizontalAlignment="Left" Height="31.723" Margin="7.394,31.747,0,0" VerticalAlignment="Top" Width="119.844"/>
         <Button x:Name="btnOK" Content="OK" HorizontalAlignment="Left" Height="35.248" Margin="5.045,83.444,0,0" VerticalAlignment="Top" Width="119.844" IsDefault="True"/>
         <Button x:Name="btnCancel" Content="Cancel" HorizontalAlignment="Left" Height="35.248" Margin="209.484,83.444,0,0" VerticalAlignment="Top" Width="115.143" IsCancel="True"/>
-
     </Grid>
 </Window>
 '@
@@ -48,7 +49,7 @@ Function Get-HashAndProperties
 {
     Param
     (
-        [Parameter(Mandatory)]        
+        [Parameter(Mandatory,HelpMessage='Full path to the file to checksum')]        
         [string]$path ,
         [ValidateSet( 'MACTripleDES' , 'MD5' , 'RIPEMD160' , ' SHA1' , 'SHA256' , 'SHA384' , 'SHA512' )]
         [string]$algorithm = 'MD5' ,
@@ -159,6 +160,45 @@ if( [string]::IsNullOrEmpty( $algorithm ) )
 
 if( ! [string]::IsNullOrEmpty( $algorithm ) )
 {
+    ## can't easily explicitly make out-gridview window foreground/restored so if parent is explorer.exe we'll hide the PowerShell window
+
+    if( ( [int]$parentProcessId = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = '$pid'" | Select-Object -ExpandProperty ParentProcessId ) `
+        -and ($parentProcess = Get-Process -Id $parentProcessId -ErrorAction SilentlyContinue) -and $parentProcess.Name -eq 'explorer' )
+    {
+        ## Executing window may be visible so make it not so
+        $pinvokeCode = @'
+            [DllImport("user32.dll", SetLastError=true)]
+            [return: MarshalAs(UnmanagedType.Bool)]
+            public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow); 
+            [DllImport("user32.dll", SetLastError=true)]
+            public static extern int SetForegroundWindow(IntPtr hwnd);
+'@
+
+        if( ! ([System.Management.Automation.PSTypeName]'Win32.User32').Type )
+        {
+            Add-Type -MemberDefinition $pinvokeCode -Name 'User32' -Namespace 'Win32' -UsingNamespace System.Text -ErrorAction Stop
+        }
+
+        if( ( $process = Get-Process -Id $pid ) -and ( [intptr]$windowHandle = $process.MainWindowHandle ) -and $windowHandle -ne [intptr]::Zero )
+        {
+            [int]$operation = 7 ## SW_SHOWMINNOACTIVE
+            [bool]$setForegroundWindow = [win32.user32]::ShowWindowAsync( $windowHandle , $operation )
+            $setForegroundWindow = [win32.user32]::ShowWindowAsync( $windowHandle , $operation ) ; $lastError = [ComponentModel.Win32Exception][Runtime.InteropServices.Marshal]::GetLastWin32Error()
+            if( ! $setForegroundWindow )
+            {
+                Write-Warning -Message "Failed to set window to minimsed for process $($process.Name) (pid $($process.Id)): $lastError"
+            }
+            else
+            {
+                Write-Verbose -Message "No error from setting window state of pid $pid to $operation"
+            }
+        }
+        else
+        {
+            Write-Warning -Message "No main window handle for process $($process.Name) (pid $($process.Id))"
+        }
+    }
+
     [array]$results = @( $args | ForEach-Object `
     {
         $item = $_
@@ -184,7 +224,7 @@ if( ! [string]::IsNullOrEmpty( $algorithm ) )
 
     if( $results -and $results.Count )
     {
-        if( $selected = $results | Out-GridView -Title "$algorithm checksums of $($results.Count) files" -PassThru )
+        if( $selected = $results | Out-GridView -Title "$algorithm checksums of $($results.Count) files" -PassThru)
         {
             $selected | Set-Clipboard
         }
@@ -193,8 +233,8 @@ if( ! [string]::IsNullOrEmpty( $algorithm ) )
 # SIG # Begin signature block
 # MIINRQYJKoZIhvcNAQcCoIINNjCCDTICAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUWQNxrMjAj6gUgDGhLk6FZWDJ
-# s0OgggqHMIIFMDCCBBigAwIBAgIQBAkYG1/Vu2Z1U0O1b5VQCDANBgkqhkiG9w0B
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU36e4FaW0kXcjv9guiyOjYwky
+# jYigggqHMIIFMDCCBBigAwIBAgIQBAkYG1/Vu2Z1U0O1b5VQCDANBgkqhkiG9w0B
 # AQsFADBlMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYD
 # VQQLExB3d3cuZGlnaWNlcnQuY29tMSQwIgYDVQQDExtEaWdpQ2VydCBBc3N1cmVk
 # IElEIFJvb3QgQ0EwHhcNMTMxMDIyMTIwMDAwWhcNMjgxMDIyMTIwMDAwWjByMQsw
@@ -255,11 +295,11 @@ if( ! [string]::IsNullOrEmpty( $algorithm ) )
 # BgNVBAMTKERpZ2lDZXJ0IFNIQTIgQXNzdXJlZCBJRCBDb2RlIFNpZ25pbmcgQ0EC
 # EAT946rb3bWrnkH02dUhdU4wCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwxCjAI
 # oAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGCNwIB
-# CzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFGbPS+D/ZXBvm4riv2Fa
-# xd4RBPAeMA0GCSqGSIb3DQEBAQUABIIBAKLxl/0EdYWE+R+mGDdd7Ibl4g+0rVk2
-# 7VQYnykunXmZOnaL5DEbGIde+QAIxusH60oTrGygnQLB+C89WOBkNrgWJxI5tan/
-# i6ZC0lMOX3tIZceLTnvGpKxRbVXQiF5u3/ER0dkWcTMyY/xq06+49vuVF8GB70O1
-# OXl0YdYyrRtVDUvJgGYXR3+jbmoh5yhPK45f42QbcqIyaKtVSnL/+4NauGIiiStA
-# SUtH2pvKf9z5varYMXsf8K8/zoVb82X/nPv/fR3fEWQ1FTcnC6JjUxNx4GHfqQSH
-# 6UgeOBAY1rAjTDd5gnFwgI+Hjk2rT6DugvTi9Ri9vIDf6CEFEwcE4T4=
+# CzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFOX6XYRoddKdQrbKhJXK
+# TUT2ePoWMA0GCSqGSIb3DQEBAQUABIIBAGOhq9dAb7sCc4QU/8npfqsJrUs3g4Ou
+# sDe2bBhY25f09XAjl/fRu1rCT9X4hMM7LaNXEGaSo0DAUiScYYnJ4RdnYBbQFlx9
+# TeOQL3ZbRQ5rMJWXlD57t2h7F7wSTXR/mByFgBtgDPH5k9vdsHIG5AqcQy4HbQHY
+# pRI2llzrdCM9xAldjBPK27o6K5bsamREFDrUfspw66HE+mceI3UPhIA3W7m4Ruf7
+# a2BXYzjj9OJUZPt/oWdC1zusH9lAqnNH9tcZmm9WjpaKBWuN0Hz/C4eSnQmBpyE7
+# x63GHq9iPyYqf+CgxpODwEN3UDhhXCrf9qKnguNgzSXFYd2pwHWU62U=
 # SIG # End signature block
