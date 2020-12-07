@@ -9,6 +9,7 @@
 
     06/12/2020  GRL  Tidy up & optimisation
     07/12/2020  GRL  Stopped windows being topmost
+    07/12/2020  GRL  Check type of data in clipboard if not text
 #>
 
 [CmdletBinding()]
@@ -190,16 +191,31 @@ else ## no file names so put clipboard contents, if text, into a window
         }
     }
     else
-    {     
-        [void][Windows.MessageBox]::Show( "No text in clipboard" , 'Viewer Error' , 'OK' , 'Exclamation' )
+    {
+        if( $clipboard = Get-Clipboard -Format Image -ErrorAction SilentlyContinue )
+        {
+            [void][Windows.MessageBox]::Show( "Clipboard contains an image $($clipboard.Width) x $($clipboard.Height)" , 'Viewer Error' , 'OK' , 'Exclamation' )
+        }
+        elseif( $clipboard = Get-Clipboard -Format Audio -ErrorAction SilentlyContinue )
+        {
+            [void][Windows.MessageBox]::Show( "Clipboard contains audio" , 'Viewer Error' , 'OK' , 'Exclamation' )
+        }
+        elseif( $clipboard = Get-Clipboard -Format FileDropList -ErrorAction SilentlyContinue )
+        {
+            [void][Windows.MessageBox]::Show( "Clipboard contains a file drop list" , 'Viewer Error' , 'OK' , 'Exclamation' )
+        }
+        else
+        {
+            [void][Windows.MessageBox]::Show( "No text in clipboard" , 'Viewer Error' , 'OK' , 'Exclamation' )
+        }
     }
 }
 
 # SIG # Begin signature block
 # MIINRQYJKoZIhvcNAQcCoIINNjCCDTICAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU0Jp6k5uh//kjWnXn9hVNwjpk
-# VXigggqHMIIFMDCCBBigAwIBAgIQBAkYG1/Vu2Z1U0O1b5VQCDANBgkqhkiG9w0B
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUP5VkyEaR5czSq91RYBcdEDMW
+# e3egggqHMIIFMDCCBBigAwIBAgIQBAkYG1/Vu2Z1U0O1b5VQCDANBgkqhkiG9w0B
 # AQsFADBlMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYD
 # VQQLExB3d3cuZGlnaWNlcnQuY29tMSQwIgYDVQQDExtEaWdpQ2VydCBBc3N1cmVk
 # IElEIFJvb3QgQ0EwHhcNMTMxMDIyMTIwMDAwWhcNMjgxMDIyMTIwMDAwWjByMQsw
@@ -260,11 +276,11 @@ else ## no file names so put clipboard contents, if text, into a window
 # BgNVBAMTKERpZ2lDZXJ0IFNIQTIgQXNzdXJlZCBJRCBDb2RlIFNpZ25pbmcgQ0EC
 # EAT946rb3bWrnkH02dUhdU4wCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwxCjAI
 # oAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGCNwIB
-# CzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFLX3rE/IakDSKzsDtl0y
-# JdUbXDArMA0GCSqGSIb3DQEBAQUABIIBABYBS5+2wZj/rLWwJXQgDNaA6BcaWPNp
-# YsUOGM22ammjyYfMJNsDxsc1JFgRjnytmEWvDX21/8drdO7AegyhZNje1razet+W
-# 9IE56noFEK2PVWDqYYcCT/RDCbVUoX3SRnWosqrJA4d54QscVU/ubOf2lAfdmsK7
-# cMoHdoA7TUUiljs0l5Y0GvB7UCsCTewH52fJy2XUTDyjRFpNsv5VdTyTHYUKCY/J
-# v2voGFmnGqMyezAth0H7VTJ0kxLLbTejyB9Dd0q3RT4Xgzcf1weFnWTga/1/Xn04
-# P7v7N4oykZveQHeu5DD3oZA8qno0aQXrIJzEopFnooigT5DTPyklv4g=
+# CzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFPzNS5oyZfB1LgyKcYCx
+# s/XPF694MA0GCSqGSIb3DQEBAQUABIIBAI/UDn58rkRzTdEYP12DYQV9M1twK2ju
+# C2EUxm7IBzNnF/c4nOS3SI9cAEIvf6pCszL67RJBA290jebj4UlPa//b+8mNCie1
+# AmgrjWAxSKQUgFQqOag9NeTqE3DwSVG+9KXwWdZ03XRKQMotdNzh9OngL4cMhA3n
+# DRjtCnaqzdTUnV5rNtKC34OIP1JHdugVLwtXw7hyte9ltuPb4I5KhQidP4RW1MJ3
+# RCRVrcMzTD2o4U36rGnL2t92xd38ori5e+dXp/cS9ngVFY7Gs9ONypzCCrn3uB3P
+# HUA1kRl+kHrGgiC9zE75DikVOIwtW9z9QaLL3yAcR9/jNpZQcadJVW4=
 # SIG # End signature block
