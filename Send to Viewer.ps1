@@ -4,6 +4,11 @@
     Simple text viewer so won't add history anywhere. Takes multiple files, from explorer send to, or if no files, uses clipboard
 
     @guyrleech 04/12/2020
+
+    Modification History
+
+    06/12/2020  GRL  Tidy up & optimisation
+    07/12/2020  GRL  Stopped windows being topmost
 #>
 
 [CmdletBinding()]
@@ -56,19 +61,33 @@ Function New-GUI( $inputXAML )
     $form ## return
 }
 
-Add-Type -AssemblyName PresentationCore,PresentationFramework,WindowsBase,System.Windows.Forms
+Add-Type -AssemblyName PresentationCore , PresentationFramework , System.Windows.Forms
 
 if( $args -and $args.Count )
 {
+    ## as GUI is built in runspace so is harder to see errors, build a dummy now to check it is ok
+    if( ! ( New-GUI -inputXAML $mainwindowXAML ) )
+    {
+        Throw 'Failed to create WPF from XAML'
+    }
+
+    if( ! ( $functionDefinition = Get-Content -Path Function:\New-GUI ) )
+    {
+        Throw 'To get definition for function New-GUI'
+    }
+
     ## use runspaces so we can have multiple files open at once, eg to compare
     $jobs = New-Object -TypeName System.Collections.Generic.List[object]
-    $SessionState = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
-    $SessionState.ApartmentState = 'STA' ## otherwise get exception making GUI - The calling thread must be STA, because many UI components require this.
-
-    if( $functionDefinition = Get-Content -Path Function:\New-GUI )
+    if( $SessionState = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault() )
     {
-        $sessionState.Commands.Add( (New-Object -TypeName System.Management.Automation.Runspaces.SessionStateFunctionEntry -ArgumentList 'New-GUI' , $functionDefinition ) )
+        $SessionState.ApartmentState = 'STA' ## otherwise get exception making GUI - "The calling thread must be STA, because many UI components require this"
     }
+    else
+    {
+        Throw 'Failed to create a default runspaces session'
+    }
+
+    $sessionState.Commands.Add( (New-Object -TypeName System.Management.Automation.Runspaces.SessionStateFunctionEntry -ArgumentList 'New-GUI' , $functionDefinition ) )
     
     [hashtable]$parameters = @{ 'file' = $null ; 'mainwindowXAML' = $mainwindowXAML }
 
@@ -105,15 +124,13 @@ if( $args -and $args.Count )
             [void]$runspace.AddScript({
                 Param( $file , $mainwindowXAML )
 
-                Add-Type -AssemblyName PresentationCore , PresentationFramework , WindowsBase , System.Windows.Forms
-
-                [string]$newline = "`r"
+                Add-Type -AssemblyName PresentationCore , PresentationFramework , System.Windows.Forms
 
                 if( $mainForm = New-GUI -inputXAML $mainwindowXAML )
                 {
                     [System.IO.File]::ReadAllLines( $file ) | . { Process `
                     {
-                        $WPFrichtextboxMain.AppendText( "$($_)$newline" )
+                        $WPFrichtextboxMain.AppendText( "$($_)`r" )
                     }}
 
                     if( ( $textRange = New-Object -TypeName System.Windows.Documents.TextRange( $WPFrichtextboxMain.Document.ContentStart , $WPFrichtextboxMain.Document.ContentEnd  ) ) -and $textRange.Text.Length -gt 0 )
@@ -123,7 +140,6 @@ if( $args -and $args.Count )
                         $mainForm.Add_Loaded( {
                             $_.Handled = $true
                             $mainForm.WindowState = 'Normal'
-                            $mainForm.Topmost = $true
                             $mainForm.Focus()
                         })
 
@@ -167,7 +183,6 @@ else ## no file names so put clipboard contents, if text, into a window
             $mainForm.Add_Loaded( {
                 $_.Handled = $true
                 $mainForm.WindowState = 'Normal'
-                $mainForm.Topmost = $true
                 $mainForm.Focus()
             })
             $WPFrichtextboxMain.AppendText( $content )
@@ -183,8 +198,8 @@ else ## no file names so put clipboard contents, if text, into a window
 # SIG # Begin signature block
 # MIINRQYJKoZIhvcNAQcCoIINNjCCDTICAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU2ZeHTVoe8qDrThnXOohYGHfq
-# gLWgggqHMIIFMDCCBBigAwIBAgIQBAkYG1/Vu2Z1U0O1b5VQCDANBgkqhkiG9w0B
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU0Jp6k5uh//kjWnXn9hVNwjpk
+# VXigggqHMIIFMDCCBBigAwIBAgIQBAkYG1/Vu2Z1U0O1b5VQCDANBgkqhkiG9w0B
 # AQsFADBlMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYD
 # VQQLExB3d3cuZGlnaWNlcnQuY29tMSQwIgYDVQQDExtEaWdpQ2VydCBBc3N1cmVk
 # IElEIFJvb3QgQ0EwHhcNMTMxMDIyMTIwMDAwWhcNMjgxMDIyMTIwMDAwWjByMQsw
@@ -245,11 +260,11 @@ else ## no file names so put clipboard contents, if text, into a window
 # BgNVBAMTKERpZ2lDZXJ0IFNIQTIgQXNzdXJlZCBJRCBDb2RlIFNpZ25pbmcgQ0EC
 # EAT946rb3bWrnkH02dUhdU4wCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwxCjAI
 # oAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGCNwIB
-# CzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFIPJP2ZBc4zRspjCFTZb
-# 4L4SnyPDMA0GCSqGSIb3DQEBAQUABIIBAGXW10H90DofTuhQzEqNOK+wqEyKUler
-# g8VxdY5Lvj/xM/otkbIwaEUyfk+x9r/oaXFO77wDjzyOA/8D0v5TCWdOI+JxftWc
-# pDudjSLid6Qs3O3KXSFGJaoswkZpz4Uk+rJggOat9vONbwjfDQuukLt8q48pITxR
-# dmOs3zHzyLlsGNMKkG8n3wBPffh49D9QsTK4eFPYjrdhCqF0dLsdaJpXMDKYYIGG
-# 3acJfv2mnardwt6PgMPkrz3I8WOMxQ0RCMmLogMXHZHG7YLIaYN0i53Haz49+L2f
-# +y2Boc0JdowoQUj8q/n+cheDGpPVq0iQW2dNV3TfRgzfx8Hzytnkdc8=
+# CzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFLX3rE/IakDSKzsDtl0y
+# JdUbXDArMA0GCSqGSIb3DQEBAQUABIIBABYBS5+2wZj/rLWwJXQgDNaA6BcaWPNp
+# YsUOGM22ammjyYfMJNsDxsc1JFgRjnytmEWvDX21/8drdO7AegyhZNje1razet+W
+# 9IE56noFEK2PVWDqYYcCT/RDCbVUoX3SRnWosqrJA4d54QscVU/ubOf2lAfdmsK7
+# cMoHdoA7TUUiljs0l5Y0GvB7UCsCTewH52fJy2XUTDyjRFpNsv5VdTyTHYUKCY/J
+# v2voGFmnGqMyezAth0H7VTJ0kxLLbTejyB9Dd0q3RT4Xgzcf1weFnWTga/1/Xn04
+# P7v7N4oykZveQHeu5DD3oZA8qno0aQXrIJzEopFnooigT5DTPyklv4g=
 # SIG # End signature block
