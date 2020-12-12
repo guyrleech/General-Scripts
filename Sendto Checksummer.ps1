@@ -15,6 +15,8 @@
     07/10/20  GRL   Added file size, last write time and file version, or product version if file version empty, properties to output
 
     05/12/20  GRL   Minimise PowerShell window if parent is explorer so sendto shortcut doesn't have to be minimised but Out-Gridview window will not be minimised as no easy way to restore grid view windows
+
+    12/12/20  GRL   Fixed bug showing wrong file size
 #>
 
 [string]$mainwindowXAML = @'
@@ -65,6 +67,7 @@ Function Get-HashAndProperties
     }
     
     $modified = $fileVersion = $null
+    [double]$size = 0
 
     if( $properties )
     {
@@ -77,9 +80,10 @@ Function Get-HashAndProperties
             }
         }
         $modified = $properties.LastWriteTime
+        $size = [math]::Round( $properties.Length / 1MB , 1 )
     }
 
-    [pscustomobject][ordered]@{ 'File' = $path ; "$algorithm checksum" = $hash ; "Size (MB)" = [math]::Round( $_.Length / 1MB , 1 ) ; 'File Version' = $fileVersion ; 'Modified' = $modified }
+    [pscustomobject][ordered]@{ 'File' = $path ; "$algorithm checksum" = $hash ; "Size (MB)" = $size ; 'File Version' = $fileVersion ; 'Modified' = $modified }
 }
 
 Function Load-GUI( $inputXml )
@@ -233,8 +237,8 @@ if( ! [string]::IsNullOrEmpty( $algorithm ) )
 # SIG # Begin signature block
 # MIINRQYJKoZIhvcNAQcCoIINNjCCDTICAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU36e4FaW0kXcjv9guiyOjYwky
-# jYigggqHMIIFMDCCBBigAwIBAgIQBAkYG1/Vu2Z1U0O1b5VQCDANBgkqhkiG9w0B
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUI2t2om6d44I6eyyftN+i9OWu
+# jLygggqHMIIFMDCCBBigAwIBAgIQBAkYG1/Vu2Z1U0O1b5VQCDANBgkqhkiG9w0B
 # AQsFADBlMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYD
 # VQQLExB3d3cuZGlnaWNlcnQuY29tMSQwIgYDVQQDExtEaWdpQ2VydCBBc3N1cmVk
 # IElEIFJvb3QgQ0EwHhcNMTMxMDIyMTIwMDAwWhcNMjgxMDIyMTIwMDAwWjByMQsw
@@ -295,11 +299,11 @@ if( ! [string]::IsNullOrEmpty( $algorithm ) )
 # BgNVBAMTKERpZ2lDZXJ0IFNIQTIgQXNzdXJlZCBJRCBDb2RlIFNpZ25pbmcgQ0EC
 # EAT946rb3bWrnkH02dUhdU4wCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwxCjAI
 # oAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGCNwIB
-# CzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFOX6XYRoddKdQrbKhJXK
-# TUT2ePoWMA0GCSqGSIb3DQEBAQUABIIBAGOhq9dAb7sCc4QU/8npfqsJrUs3g4Ou
-# sDe2bBhY25f09XAjl/fRu1rCT9X4hMM7LaNXEGaSo0DAUiScYYnJ4RdnYBbQFlx9
-# TeOQL3ZbRQ5rMJWXlD57t2h7F7wSTXR/mByFgBtgDPH5k9vdsHIG5AqcQy4HbQHY
-# pRI2llzrdCM9xAldjBPK27o6K5bsamREFDrUfspw66HE+mceI3UPhIA3W7m4Ruf7
-# a2BXYzjj9OJUZPt/oWdC1zusH9lAqnNH9tcZmm9WjpaKBWuN0Hz/C4eSnQmBpyE7
-# x63GHq9iPyYqf+CgxpODwEN3UDhhXCrf9qKnguNgzSXFYd2pwHWU62U=
+# CzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFKwMGHwOSo3WHBKDMpOb
+# cWTDqb+RMA0GCSqGSIb3DQEBAQUABIIBAEXSPUixQII9rWvDZVBbBEBV8sedeOuZ
+# TshlZQ7B/mRW9RsaA3zdnRur/kxOcHpmIj/5miODWGAC/DJnczgitEiY2Q0BrmLQ
+# vjKRSshSEVGlNR0m/Bod981tc1/r3wf3/XPCPwdRtP3CyYPDpmeOL9ZWyduUg94K
+# mgofg+yAsO05PKHduruJeVMjlSVv+kTQqCi6+aDxL/alsfK8igH7aOk5ge4rt1W9
+# VRNBjrc+FI+OevHY8sl/HjFwFeLPhLkoCPYDuMe1pS6xi3xNMTUYO3JQ/Rdjym1M
+# Mn25XSQwQPmuHjECzpuobhkiAx2cq3PIZzMuCdJflrNgpf+2m/ZZjiQ=
 # SIG # End signature block
