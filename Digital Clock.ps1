@@ -90,6 +90,7 @@ Display a countdown timer starting at 3 minutes in a window but do not start it 
     @guyrleech 12/10/2020  Added message box for timer expiry text
                            Fixed countdown timer re-run bug where timer not reset so expires 
     @guyrleech 30/11/2020  Added -title argument
+    @guyrleech 18/12/2020  Added code to stop and delete timer on exit
 #>
 
 [CmdletBinding()]
@@ -740,13 +741,14 @@ $WPFDeleteContextMenu.Add_Click({
 }
 
 ## https://richardspowershellblog.wordpress.com/2011/07/07/a-powershell-clock/
+$script:formTimer = $null
 $form.Add_SourceInitialized({
-    if( $formTimer = New-Object -TypeName System.Windows.Threading.DispatcherTimer )
+    if( $script:formTimer = New-Object -TypeName System.Windows.Threading.DispatcherTimer )
     {
         ## need 0.1s granularity for the stopwatch but only just sub-second for the clock
-        $formTimer.Interval = $(if( $stopWatch -or $tenths ) { [Timespan]'00:00:00.100' } else { [Timespan]'00:00:00.5' })
-        $formTimer.Add_Tick( $timerBlock )
-        $formTimer.Start()
+        $script:formTimer.Interval = $(if( $stopWatch -or $tenths ) { [Timespan]'00:00:00.100' } else { [Timespan]'00:00:00.5' })
+        $script:formTimer.Add_Tick( $timerBlock )
+        $script:formTimer.Start()
     }
 })
 
@@ -770,6 +772,15 @@ else
 
 $null = $Form.ShowDialog()
 
+if( $script:formTimer )
+{
+    $script:formTimer.Stop()
+    $script:formTimer.remove_Tick( $timerBlock )
+    $script:formTimer = $null
+    $timerBlock = $null
+    Remove-Variable -Name timerBlock -Force -Confirm:$false
+}
+
 ## put marker items onto the pipeline so can be copy'n'pasted into notes
 if( $WPFlistMarkings.Items -and $WPFlistMarkings.Items.Count )
 {
@@ -779,8 +790,8 @@ if( $WPFlistMarkings.Items -and $WPFlistMarkings.Items.Count )
 # SIG # Begin signature block
 # MIINRQYJKoZIhvcNAQcCoIINNjCCDTICAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUQG8bDfkiM0+Mj9i6UMummDnn
-# r5igggqHMIIFMDCCBBigAwIBAgIQBAkYG1/Vu2Z1U0O1b5VQCDANBgkqhkiG9w0B
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUaVi+7nq1Rr9iXy4cBUbS1i5H
+# 62SgggqHMIIFMDCCBBigAwIBAgIQBAkYG1/Vu2Z1U0O1b5VQCDANBgkqhkiG9w0B
 # AQsFADBlMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYD
 # VQQLExB3d3cuZGlnaWNlcnQuY29tMSQwIgYDVQQDExtEaWdpQ2VydCBBc3N1cmVk
 # IElEIFJvb3QgQ0EwHhcNMTMxMDIyMTIwMDAwWhcNMjgxMDIyMTIwMDAwWjByMQsw
@@ -841,11 +852,11 @@ if( $WPFlistMarkings.Items -and $WPFlistMarkings.Items.Count )
 # BgNVBAMTKERpZ2lDZXJ0IFNIQTIgQXNzdXJlZCBJRCBDb2RlIFNpZ25pbmcgQ0EC
 # EAT946rb3bWrnkH02dUhdU4wCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwxCjAI
 # oAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGCNwIB
-# CzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFAe2lkhhAFAd6xcjYNxr
-# HOC14RRmMA0GCSqGSIb3DQEBAQUABIIBAGLlbqmRoK94vrI9alHhozgayXsA7d0s
-# lay16FkzvK1VgW1kCEPPI9iEnIGlzUE7QXhMSN2oa6gU4cYQHdO1dIwTTs5nFIxw
-# srvrpO84i5WTe7DoDZ+K8LhK0tu0xoXYIlYgwwCwB6dSOfgySh2THp6n89W9xPEe
-# mkJ/3AnUhYJ8PAumEiHrk7wEOQ6IVC9WD+JsZKHxDIRO1y62arr7RHMECncRK8s/
-# hTz1rTIZxxdVjHVD4+VswlGeQJNXntKJcrLCumT3Ddu9kfCBoMUNuDAB1qLvuPKK
-# Q/6AQ/HzSIRAj8VcnqDhp+4Y++R+mecrxhqJiOsQEdYAwCZS0sVh7kw=
+# CzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFINRt3kTdCfhgFuW+Wix
+# 2pUTaM9lMA0GCSqGSIb3DQEBAQUABIIBABLZnKTyb9ZulNHPsB55gwiUwsdl3iQN
+# wFXNmJnVKdA5XlZeI7mEmBR9S/5v9xHdhT8me3e+smowP1jO5hE6eGUWSkL3wt51
+# T1+/QWb63Pb8sFVM/hEktiUV+nlQGFthHKD3IwQWEt7X6k4eL0c0Uf219VmlqheH
+# oWS3OTeIQO+r+QtpzAjWI+1L1ewmp1k+wdoSbIYE+rCqOGHEGfEI/OKrCSRUP3gP
+# xcm34+KzWqmHRBnz5crg9UlTxsR9B9a4dAE74v1Wpz2LVorQ7TDuF++4PyibuC4j
+# VulVlo6EeL9KUuIRuW2xj7c8KUjF2PevANw+RwFnTPladVl0+61O4oM=
 # SIG # End signature block
