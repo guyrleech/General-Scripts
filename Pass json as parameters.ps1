@@ -12,25 +12,41 @@
 .PARAMETER otherParameters
     Other parameters to pass to the script. These will override the same parameter if found in the json file
 
+.PARAMETER saveTemplate
+    Parse the script specified by -script and save its parameters to the file specified by -jsonfile as JSON
+
+.PARAMETER clobber
+    If the file specified by -jsonfile exists when -savetemplate is specified, overwrite the file otherwise the script wil abort
+
 .EXAMPLE
-    & '.\Pass json as parameters.ps1' -jsonfile C:\temp\parameters.json -script "New MCS catalog machines delivery group.ps1" -Verbose -otherParameters @{ 'Verbose' = $true }
+    & '.\Pass json as parameters.ps1' -jsonfile C:\temp\parameters.json -script "New MCS catalog machines delivery group.ps1" -otherParameters @{ 'Verbose' = $true }
 
     Read parameters from the JSON file "C:\temp\parameters.json" and call the script "New MCS catalog machines delivery group.ps1" with these parameters and also -verbose
+    
+.EXAMPLE
+    & '.\Pass json as parameters.ps1' -jsonfile C:\temp\parameters.json -script "New MCS catalog machines delivery group.ps1" -savetemplate -clobber
+
+    Parse the parameters in the script "New MCS catalog machines delivery group.ps1" and save these as JSON to file "C:\temp\parameters.json"
 
 .NOTES
 
     Modification History:
 
     2021/12/09  @guyrleech  Initial release (incorporating ideas from @KevinMarquette)
+    2021/12/09  @guyrleech  Added -saveTemplate and -clobber options
 #>
 
 [CmdletBinding()]
 
 Param
 (
+    [Parameter(Mandatory=$true,HelpMessage='JSON file to use')]
     [string]$jsonfile , ## TODO read data from pipeline
+    [Parameter(Mandatory=$true,HelpMessage='Script to use')]
     [string]$script ,
-    [hashtable]$otherParameters
+    [hashtable]$otherParameters ,
+    [switch]$saveTemplate ,
+    [switch]$clobber
 )
 
 [string]$scriptWithPath = $script
@@ -57,82 +73,136 @@ if( $null -eq $scriptParameters -or $scriptParameters.Count -eq 0 )
 
 Write-Verbose -Message "Script `"$scriptWithPath`" takes $($scriptParameters.Count) parameters"
 
-[hashtable]$parametersFromJson = @{}
-
-if( -Not [string]::IsNullOrEmpty( $jsonfile ) )
+if( $saveTemplate )
 {
-    if( -Not ( Test-Path -Path $jsonfile -ErrorAction SilentlyContinue ) )
+    if( ( Test-Path -Path $jsonfile ) -and -Not $clobber )
     {
-        Throw "JSON file `"$jsonfile`" not found"
+        Throw "File `"$jsonfile`" exists - use -clobber to overwrite"
     }
-    if( $jsonobject = ( Get-Content -Path $jsonfile | ConvertFrom-Json ) )
+    
+    $jsonobject = New-Object -TypeName psobject
+
+    ## parse the file as Get-Command doesn't tell us if there are default values which we need to put in the json
+    if( -Not ( $ast = [System.Management.Automation.Language.Parser]::ParseFile( $scriptwithpath , [ref]$null , [ref]$null ) ) )
     {
-        ForEach( $property in $jsonobject.PSObject.Properties )
+        Throw "Failed to parse script `"$scriptWithPath`""
+    }
+
+    ForEach( $parameter in $ast.paramblock.Parameters )
+    {
+        ## if pscredential, add place holders for username and securestring
+        $value = $null
+
+        if( $parameter.StaticType.Name -eq 'PSCredential' )
         {
-            if( $otherParameters.Contains( $property.Name ))
+            $value = @{
+                'Password' = 'SecureString text'
+                'UserName' = 'domain\user' 
+            }
+        }
+        else
+        {
+            if( $parameter.StaticType.BaseType -match '\bArray\b' )
             {
-                Write-Warning -Message "-$($property.Name) present in other parameters passed so ignoring json value `"$($property.Value)`""
+                if( $parameter.defaultvalue )
+                {
+                    $value = Invoke-Expression -Command $parameter.defaultvalue.extent.text
+                }
+                else
+                {
+                    ## add dummy entry so that we get a place holder in the json
+                    $value = @( )
+                }
             }
             else
             {
-                $value = $property.value
-                
-                ## need to deal with [switch] types as will be custom objects
-                if( $property.Value.GetType().Name -eq 'PSCustomObject' )
+                Set-Variable -Name 'value' -Value (( $parameter.DefaultValue | Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue ) -as ($parameter.StaticType -as [type]))
+            }
+        }
+        Add-Member -InputObject $jsonobject -MemberType NoteProperty -Name ($parameter.Name -replace '^\$') -Value $value
+    }
+    
+    $jsonobject | ConvertTo-Json | Out-File -FilePath $jsonfile
+}
+else ## not saving to a template
+{
+    [hashtable]$parametersFromJson = @{}
+
+    if( -Not [string]::IsNullOrEmpty( $jsonfile ) )
+    {
+        if( -Not ( Test-Path -Path $jsonfile -ErrorAction SilentlyContinue ) )
+        {
+            Throw "JSON file `"$jsonfile`" not found"
+        }
+        if( $jsonobject = ( Get-Content -Path $jsonfile | ConvertFrom-Json ) )
+        {
+            ForEach( $property in $jsonobject.PSObject.Properties )
+            {
+                if( $otherParameters.Contains( $property.Name ))
                 {
-                    if( $property.Value.PSObject.Properties[ 'IsPresent' ] -and $property.Value.IsPresent -is [bool] )
+                    Write-Warning -Message "-$($property.Name) present in other parameters passed so ignoring json value `"$($property.Value)`""
+                }
+                else
+                {
+                    $value = $property.value
+                
+                    ## need to deal with [switch] types as will be custom objects
+                    if( $property.Value.GetType().Name -eq 'PSCustomObject' )
                     {
-                        $value = $property.Value.IsPresent
-                    }
-                    elseif( $property.Name -match 'credentials$' -and $property.Value.PSobject.Properties[ 'username' ] -and $property.Value.PSobject.Properties[ 'password' ] )
-                    {
-                        $value = $null
-                        $value = New-Object System.Management.Automation.PSCredential( $property.Value.username , ( ConvertTo-SecureString -String $property.Value.password ))
-                        if( -not $value )
+                        if( $property.Value.PSObject.Properties[ 'IsPresent' ] -and $property.Value.IsPresent -is [bool] )
                         {
-                            Throw "Failed to make PScredential for $($property.Value.username)"
+                            $value = $property.Value.IsPresent
+                        }
+                        elseif( $property.Name -match 'credentials$' -and $property.Value.PSobject.Properties[ 'username' ] -and $property.Value.PSobject.Properties[ 'password' ] )
+                        {
+                            $value = $null
+                            $value = New-Object System.Management.Automation.PSCredential( $property.Value.username , ( ConvertTo-SecureString -String $property.Value.password ))
+                            if( -not $value )
+                            {
+                                Throw "Failed to make PScredential for $($property.Value.username)"
+                            }
+                        }
+                        else
+                        {
+                            Throw "Don't know how to process json file item `"$($property.Name)`""
                         }
                     }
-                    else
-                    {
-                        Throw "Don't know how to process json file item `"$($property.Name)`""
-                    }
-                }
 
-                try
-                {
-                    Write-Verbose -Message "Adding `"$($property.Name)`" = `"$Value`""
-                    $parametersFromJson.Add( $property.Name , $value )
-                }
-                catch
-                {
-                    if( ( $existing = $parametersFromJson[ $property.Name ] ) -ne $value )
+                    try
                     {
-                        Throw "Repetition of `"$($property.Name)`" with different values `"$value`" and `"$existing`""
+                        Write-Verbose -Message "Adding `"$($property.Name)`" = `"$Value`""
+                        $parametersFromJson.Add( $property.Name , $value )
+                    }
+                    catch
+                    {
+                        if( ( $existing = $parametersFromJson[ $property.Name ] ) -ne $value )
+                        {
+                            Throw "Repetition of `"$($property.Name)`" with different values `"$value`" and `"$existing`""
+                        }
                     }
                 }
             }
         }
+        if( -Not $jsonobject )
+        {
+            Throw "Failed to parse json from `"$jsonfile`""
+        }
     }
-    if( -Not $jsonobject )
-    {
-        Throw "Failed to parse json from `"$jsonfile`""
-    }
+
+    Write-Verbose -Message "Got $($parametersFromJson.Count) parameters from json to pass"
+
+    $otherParameters += $parametersFromJson
+
+    Write-Verbose -Message "Calling script `"$scriptWithPath`" with $($otherParameters.Count) parameters"
+
+    & $scriptWithPath @otherParameters
 }
-
-Write-Verbose -Message "Got $($parametersFromJson.Count) parameters from json to pass"
-
-$otherParameters += $parametersFromJson
-
-Write-Verbose -Message "Calling script `"$scriptWithPath`" with $($otherParameters.Count) parameters"
-
-& $scriptWithPath @otherParameters
 
 # SIG # Begin signature block
 # MIIZsAYJKoZIhvcNAQcCoIIZoTCCGZ0CAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUB9y/n4hoOWDDAkjD1lwA/Grk
-# gHCgghS+MIIE/jCCA+agAwIBAgIQDUJK4L46iP9gQCHOFADw3TANBgkqhkiG9w0B
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU97kjt8l1PsQQRzB64YjwCHYV
+# b/ugghS+MIIE/jCCA+agAwIBAgIQDUJK4L46iP9gQCHOFADw3TANBgkqhkiG9w0B
 # AQsFADByMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYD
 # VQQLExB3d3cuZGlnaWNlcnQuY29tMTEwLwYDVQQDEyhEaWdpQ2VydCBTSEEyIEFz
 # c3VyZWQgSUQgVGltZXN0YW1waW5nIENBMB4XDTIxMDEwMTAwMDAwMFoXDTMxMDEw
@@ -248,23 +318,23 @@ Write-Verbose -Message "Calling script `"$scriptWithPath`" with $($otherParamete
 # cmVkIElEIENvZGUgU2lnbmluZyBDQQIQBP3jqtvdtaueQfTZ1SF1TjAJBgUrDgMC
 # GgUAoHgwGAYKKwYBBAGCNwIBDDEKMAigAoAAoQKAADAZBgkqhkiG9w0BCQMxDAYK
 # KwYBBAGCNwIBBDAcBgorBgEEAYI3AgELMQ4wDAYKKwYBBAGCNwIBFTAjBgkqhkiG
-# 9w0BCQQxFgQUEIlnRx6YvXMU2yy4KdS/ocsDul0wDQYJKoZIhvcNAQEBBQAEggEA
-# CCzmDNIpBFAOx/G0atgt8bA48CSsD2aGMyjjqIwqzKQ41i7MjJnx8A1W6GOgiPfD
-# JTzL+y1QDVR1JNyArl0KxoX11N1ZFCy0hYu62ibWTMoS6n5X8YGcOcNs+/ltlWJK
-# 5AVgyszlrsgd69T8dVmSFyHcUDCNEMp6bjOHwFaDjjER0D1GPIM7rr2OM5oUkMu0
-# cbxp4y+yF4eThalUMGULhHmlQq/XN/p2Klc12aS708u4s8XntiiDyLh8W8n4aB9J
-# Cp2sbZnLL56uLz8lUMHJOQZrOfFt5w5lpOaFSzoHG54tR6iXRZbIK3KYboIXA3Wf
-# 12Tvq8FZgN127WSn3HRzdKGCAjAwggIsBgkqhkiG9w0BCQYxggIdMIICGQIBATCB
+# 9w0BCQQxFgQUPZn4J17fvQIN4CXRvR2U+yjbSWUwDQYJKoZIhvcNAQEBBQAEggEA
+# Q5Qp0pRB2tGPfCPfOED8ZaivxgYV04VvnRCn076Ocb5005CTQG3VPRLV99sevn6G
+# fb95I3m8oxi1HSdZlD8XrAEoyQ2NxzyQKW+5BguNxdcQh2avdI5EQl0rncYmC1J7
+# jpjtVIA9fG/D/cmH3dIf27w7Bc66JGKJcIRyRpr3Lq5P3xz5qHgTKTB1+vQM/ERT
+# LCLG8WxxKjxKeF5tG3eoAkcqrOiKhgPVpmgdK+2uufKREL3lE+vshpeNCIZ2Gi3U
+# KeZjB4B64193a3EB35IKrGJmO6FrrvWcmPjnhnfxOOgbbaoJmbBIqp6SG/UDq6Hi
+# 5kQOeON7KdBEb+kYzbEbt6GCAjAwggIsBgkqhkiG9w0BCQYxggIdMIICGQIBATCB
 # hjByMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQL
 # ExB3d3cuZGlnaWNlcnQuY29tMTEwLwYDVQQDEyhEaWdpQ2VydCBTSEEyIEFzc3Vy
 # ZWQgSUQgVGltZXN0YW1waW5nIENBAhANQkrgvjqI/2BAIc4UAPDdMA0GCWCGSAFl
 # AwQCAQUAoGkwGAYJKoZIhvcNAQkDMQsGCSqGSIb3DQEHATAcBgkqhkiG9w0BCQUx
-# DxcNMjExMjA5MTc1MTQ5WjAvBgkqhkiG9w0BCQQxIgQgyxFMOx7rLqvd1EW19RnN
-# Tr2VE4na9khwLV/4h8dYRUMwDQYJKoZIhvcNAQEBBQAEggEAiq49wbeOLTixJqg3
-# gzQecbtQZELRFNjLJMd+UmaVpdi7LdISSLKKss+fLR2VJlyA4dfW/DHXY+eVYJ1d
-# r7oB5e4nKMmXq1IeREoD9fJwTQ1isOJsNOHyQYGJdYRGtPu+Xd8hUiE1XIUJNFBf
-# 8BnWPNaKOVqjUS01G4vNRfkobLRMmcTHY9qhAq5cFyKO9+4wfcN9kRdRqpMZeI0b
-# cfRqxhtVo5oKl40kTGBcK00yKGCNfD7LpoV0b43CW1CTXfrOZWSyYRYrtj7fgw4D
-# 2vj6B/M74PjQVrcljQ2ytxAnV3V8mh76BLSSWfRx5O/n+f+1irlBBT4KcQwGuZdq
-# rPVgCg==
+# DxcNMjExMjA5MjMxNjUxWjAvBgkqhkiG9w0BCQQxIgQgWmX3Jb292nYPVJl+vi+u
+# grtFXKbxPsZ4s1Q1HBlxIaUwDQYJKoZIhvcNAQEBBQAEggEAKi8XUh2LVX8KITKt
+# DnMaTW45TMKo19WMqiHVzSj2RMz3TFMdLPamqhRd5IpljMNh6RwG0Vu7KOiDnP4k
+# 41oFNDLfsGmIHkuvyYgY92C3zT/Md+/U+AektWBM0rsQ3udt4WbiNkRKnKilknNP
+# +BE65hL2GjldRr0s8pzZUCRA+AbKWsExyNHvOf2nMbw5vrf0CcdwzazWtxJuUHX4
+# iZNPE1JhJNp5dD8MKfnahek2bndLtcK/0PAyNqHqYVni6OB6EYI8bR7GaluwpUSo
+# YNZ97F6BhwV36q+ekTXgMNWuDcAU5C9XsPGuZglqz07Rp5Xqbj0Eh0AODaa0MA82
+# dekIgQ==
 # SIG # End signature block
