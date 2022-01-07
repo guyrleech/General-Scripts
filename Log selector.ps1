@@ -34,6 +34,7 @@
     Modification History:
 
     @guyrleech 2022/07/01  Initial release
+    @guyrleech 2022/07/01  Changed from ReadAllLines to using StreamReader for speed
 #>
 
 [CmdletBinding()]
@@ -52,6 +53,7 @@ Try
     {
         Throw "No start or end time would output the entire file!"
     }
+    $reader = $null
     [bool]$started = ($start -eq $null)
     [int]$linenumber = 0
     [int]$outputted = 0
@@ -60,45 +62,50 @@ Try
     ## compile the regex for speed
     $regex = [regex]::new( '^([^\s]+\s[^\s]+)\s' , 'Compiled, IgnoreCase, CultureInvariant' )
 
-    [IO.File]::ReadAllLines( $logFile ) | . {
-        Process `
+    $reader = $null
+    $reader = New-Object -TypeName System.IO.StreamReader -ArgumentList $logFile
+    if( -Not $reader )
+    {
+        Throw "Failed to open $logFile"
+    }
+
+    While( -Not $reader.EndOfStream )
+    {
+        $linenumber++
+        $line = $reader.ReadLine()
+      
+        ## 07/01/22 11:44:09.441 30556 0056 22484: BrokerController:
+        ## ^^^^^^^^^^^^^^^^^^^^^
+        if( $line -and $line.Length -and ( $match = $regex.Matches( $line ) ) -and $match.Success -and ( $timestamp = $match.groups[0].value -as [datetime] ) )
         {
-            $linenumber++
-            $line = $_
-         
-            ## 07/01/22 11:44:09.441 30556 0056 22484: BrokerController:
-            ## ^^^^^^^^^^^^^^^^^^^^^
-            if( ( $match = $regex.Matches( $line ) ) -and $match.Success -and ( $timestamp = $match.groups[0].value -as [datetime] ) )
+            if( $started )
             {
-                if( $started )
+                if( -Not $end -or $timestamp -le $end )
                 {
-                    if( -Not $end -or $timestamp -le $end )
-                    {
-                        $outputted++
-                        $line
-                    }
-                    else
-                    {
-                        Write-Verbose -Message "End timestamp exceeded on line $linenumber $($match.groups[0].value) in $(([datetime]::now - $startTime).TotalSeconds) seconds, outputted $outputted"
-                        exit
-                    }
+                    $outputted++
+                    $line
                 }
-                else ## not found start yet
+                else
                 {
-                    if( $timestamp -ge $start )
-                    {
-                        Write-Verbose -Message "Start timestamp found on line $linenumber $($match.groups[0].value) in $(([datetime]::now - $startTime).TotalSeconds) seconds"
-                        $started = $true
-                        $outputted++
-                        $line
-                    }
+                    Write-Verbose -Message "End timestamp exceeded on line $linenumber $($match.groups[0].value) in $(([datetime]::now - $startTime).TotalSeconds) seconds, outputted $outputted"
+                    exit
                 }
             }
-            elseif( $started ) ## could be a continuation, stack trace, etc
+            else ## not found start yet
             {
-                $outputted++
-                $line
+                if( $timestamp -ge $start )
+                {
+                    Write-Verbose -Message "Start timestamp found on line $linenumber $($match.groups[0].value) in $(([datetime]::now - $startTime).TotalSeconds) seconds"
+                    $started = $true
+                    $outputted++
+                    $line
+                }
             }
+        }
+        elseif( $started ) ## could be a continuation, stack trace, etc
+        {
+            $outputted++
+            $line
         }
     }
 }
@@ -110,16 +117,23 @@ Finally
 {
     Write-Verbose -Message "Exiting. Read $linenumber lines in $(([datetime]::now - $startTime).TotalSeconds) seconds, outputted $outputted"
 
-    if( $outputted -eq 0 )
+    if( $reader -and $outputted -eq 0 )
     {
         Write-Warning -Message "No lines in time range found"
     }
+    if( $reader )
+    {
+        $reader.Close()
+        $reader.Dispose()
+        $reader = $null
+    }
 }
+
 # SIG # Begin signature block
 # MIIZsAYJKoZIhvcNAQcCoIIZoTCCGZ0CAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUttoS1hLrDdASTaVI86lUIiF2
-# q4mgghS+MIIE/jCCA+agAwIBAgIQDUJK4L46iP9gQCHOFADw3TANBgkqhkiG9w0B
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQULtc9Iuj0h6P6DcQmspgGq9wJ
+# a2ugghS+MIIE/jCCA+agAwIBAgIQDUJK4L46iP9gQCHOFADw3TANBgkqhkiG9w0B
 # AQsFADByMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYD
 # VQQLExB3d3cuZGlnaWNlcnQuY29tMTEwLwYDVQQDEyhEaWdpQ2VydCBTSEEyIEFz
 # c3VyZWQgSUQgVGltZXN0YW1waW5nIENBMB4XDTIxMDEwMTAwMDAwMFoXDTMxMDEw
@@ -235,23 +249,23 @@ Finally
 # cmVkIElEIENvZGUgU2lnbmluZyBDQQIQBP3jqtvdtaueQfTZ1SF1TjAJBgUrDgMC
 # GgUAoHgwGAYKKwYBBAGCNwIBDDEKMAigAoAAoQKAADAZBgkqhkiG9w0BCQMxDAYK
 # KwYBBAGCNwIBBDAcBgorBgEEAYI3AgELMQ4wDAYKKwYBBAGCNwIBFTAjBgkqhkiG
-# 9w0BCQQxFgQUadp75OucfG3JQ4rUSaludqrELpQwDQYJKoZIhvcNAQEBBQAEggEA
-# GbIUX+VHN9ZuxZqcj0mF9fyqm+ogcEwA0IiTn4bhcHJeN8GUEi0ZG3QdJBjnh/nz
-# faY4DTS1yrHpYWUgMHkP5LPplrC6qrP8UBDDwWrWB1nDTtzZoZFCCobktamElXXw
-# aMJljLtFpgHQWR9QgcOu4LXXc1gTjv3NuwDAe+FOVw5JYXEmdWT/UUxnstwlAK5L
-# TtvonrnQasM85+v+/Q+jSuqG1PzNoYNGGyI5nu82mV0w8lPfdkULBj0y+Zsdxm5C
-# VkvBipC8CQDX0M4d9Kpgem1zAOP3b1JndBjz/5PgrCwO4UNZdS7B3wVm48S3IPc6
-# Uhc3zMzoX/O9w0CcqvXtE6GCAjAwggIsBgkqhkiG9w0BCQYxggIdMIICGQIBATCB
+# 9w0BCQQxFgQU1iynj1rzDNELKitpnFyyji44kJkwDQYJKoZIhvcNAQEBBQAEggEA
+# DLMN04nZU72+DvZz8tCndaMWcSoMMpgW+Y/KGX6KEq8uT3a9WFnViDw1G3Rl6XH2
+# JbzNphntcfZXVwVzaJmEq7gnUw/wXC0qQDLEHjH2jVh0soJ8+jAfh5pYwSTq1apK
+# igjB51MpeO5056h3Z37cyzm7PkXAKbkW3j0vWgahLIT9q+2wqCxR54BiM0qclnjp
+# k6Jy2hMmsqlCihYKj4nXZ7ziopw4ptpVPIZ+kSRtsMHEv55HNutjWujmNPQNOV+s
+# vYtSqTfx/Wq+yJlgZxkj+WTvZUCH2vEzOkKzcWlD9E9kVp6lM8sc3GHBqObHi1G0
+# W1wVa94+MhbDDEIopGdrsaGCAjAwggIsBgkqhkiG9w0BCQYxggIdMIICGQIBATCB
 # hjByMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQL
 # ExB3d3cuZGlnaWNlcnQuY29tMTEwLwYDVQQDEyhEaWdpQ2VydCBTSEEyIEFzc3Vy
 # ZWQgSUQgVGltZXN0YW1waW5nIENBAhANQkrgvjqI/2BAIc4UAPDdMA0GCWCGSAFl
 # AwQCAQUAoGkwGAYJKoZIhvcNAQkDMQsGCSqGSIb3DQEHATAcBgkqhkiG9w0BCQUx
-# DxcNMjIwMTA3MTM0MTU4WjAvBgkqhkiG9w0BCQQxIgQgR+cZoezsmdQOpJPgBwnC
-# HWs4DR4Xx34yV3GaGc9gn/MwDQYJKoZIhvcNAQEBBQAEggEAZ6JkiGxhEKU4Oqiz
-# Lr6m5nPUobEUGEAM5wk1KWPngmFM+uBYWu9Z7U3SFyHmmqqqDE2/22F9PH7hbNtc
-# fqwRUvjQoLV3oDe3Vr1e0UhEeUx/Roi8FDq/z27lZ0vmbmc2bP3jPEnA5EEbiLg7
-# 6VnmMDS1Bej9E4VIbXgS1xaq2pygdqG3FzxGc8U+Y/quN4x2i2wtMbYxB8xGVcCE
-# RN25D+K08VivXAUXfkzW+EEdT5nJ+3JSg+6NY5gDKv2FO+1DEbLJqkzgaruDOo2X
-# iy0D+XC1GE3OLPvmoIQFpAhZ0sfiQ5zia4v3g2gvtJxCqHcO3mOZIh1xTyZDEG/j
-# aeI5jA==
+# DxcNMjIwMTA3MTYwNjQ4WjAvBgkqhkiG9w0BCQQxIgQgPpmwqtqn4YNfEirpkE7N
+# fXqdl8OHtjq3R+iZ42yV3R4wDQYJKoZIhvcNAQEBBQAEggEAqzQbgBxZ5w+88yU4
+# vPglKR2inXj1GVgynzzrCleNM2KjGkBY+gjSwSZY3FfiJz32RwJ8rMmu1ZfpYBOJ
+# I4Dy2TpWnKfKGq6A5WMzskIH9ekEXfxUUULoQ4Ar/nVZAhKOqwW4Pgd3b7UtlF0b
+# D/M2ZHf5Mu9k7hUdf4xSCl2NKpH08Y4Uxd631GtRHvJIlhOHKDuwNYQ1bWq6AmtW
+# 734Ocw31uyvsW9iamW6Q87FCDY3ZPE6hh5K+GbWnel3kXZ71MoWLW9rEPr3/8Vg2
+# PeFrrpFTGVtK2ovDISMSnlubcoC+T0XE1RXTL6Jdsp3a5mWsEsKBXi/RMmc9leXI
+# 7IqvKQ==
 # SIG # End signature block
