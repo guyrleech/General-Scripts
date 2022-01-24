@@ -10,6 +10,9 @@
 .PARAMETER connection
     The username and host to connect to
     
+.PARAMETER resolve
+    Resolve IP addresses to host names/aliases
+
 .PARAMETER port
     The SSH port to connect to
     
@@ -35,6 +38,7 @@
     Modification History:
 
     @guyrleech 2022/01/16 Initial version
+    @guyrleech 2022/01/24 Option to resolve IP address to hostname
 #>
 
 <#
@@ -55,6 +59,7 @@ Param
 (
     [Parameter(Mandatory=$true,HelpMessage='SSH host')]
     [string]$connection ,
+    [switch]$resolve,
     [int]$port ,
     [string]$sshOptions = '-o ConnectTimeout=15 -o batchmode=yes' ,
     [string]$command = 'smbstatus' ,
@@ -131,6 +136,20 @@ Invoke-Expression -Command "ssh.exe $sshoptions $connection $portparameter $comm
                             {
                                 $item.Add( 'User' , $pidentry.User )
                                 $item.Add( 'Address' , $pidentry.Address )
+                                if( $pidentry.Address -and $resolve )
+                                {
+                                    $hostname = $null
+                                    if( $hostDetails = [System.Net.Dns]::GetHostByAddress( [ipaddress]$pidentry.Address ) )
+                                    {
+                                        $hostname = $hostDetails.HostName
+                                        if( $hostDetails.Aliases -and $hostDetails.Aliases.Count )
+                                        {
+                                            $hostname = -join ( $hostname , " " , ($hostDetails.Aliases -join ',' ))
+                                        }
+                                    }
+
+                                    $item.Add( 'Hostname' , $hostname )
+                                }
                             }
                             else
                             {
@@ -228,8 +247,8 @@ Invoke-Expression -Command "ssh.exe $sshoptions $connection $portparameter $comm
 # SIG # Begin signature block
 # MIIZsAYJKoZIhvcNAQcCoIIZoTCCGZ0CAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU3GF3O64ES7CwcZ/c3z9krpQd
-# eJCgghS+MIIE/jCCA+agAwIBAgIQDUJK4L46iP9gQCHOFADw3TANBgkqhkiG9w0B
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUQlgpcuXeuB3gTeOm12NIn79B
+# 0ZegghS+MIIE/jCCA+agAwIBAgIQDUJK4L46iP9gQCHOFADw3TANBgkqhkiG9w0B
 # AQsFADByMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYD
 # VQQLExB3d3cuZGlnaWNlcnQuY29tMTEwLwYDVQQDEyhEaWdpQ2VydCBTSEEyIEFz
 # c3VyZWQgSUQgVGltZXN0YW1waW5nIENBMB4XDTIxMDEwMTAwMDAwMFoXDTMxMDEw
@@ -345,23 +364,23 @@ Invoke-Expression -Command "ssh.exe $sshoptions $connection $portparameter $comm
 # cmVkIElEIENvZGUgU2lnbmluZyBDQQIQBP3jqtvdtaueQfTZ1SF1TjAJBgUrDgMC
 # GgUAoHgwGAYKKwYBBAGCNwIBDDEKMAigAoAAoQKAADAZBgkqhkiG9w0BCQMxDAYK
 # KwYBBAGCNwIBBDAcBgorBgEEAYI3AgELMQ4wDAYKKwYBBAGCNwIBFTAjBgkqhkiG
-# 9w0BCQQxFgQUB80jZNueLVewhVcBKP3XqJxUdN0wDQYJKoZIhvcNAQEBBQAEggEA
-# GHg8G/OJ3T6BtpA3AHNl5EyN2MsY7VQ08giBqk9D6AI0DZxMJ4Zv+Rcv9Noz0Qy1
-# Wq7+EJ6K+MmJ3lyczCZZO7qAtcicT6ddhKejNbO3C3evbh2pH+XqwIhqJiP7ALwn
-# m8NOIS3diLIXssezvSHNAProtQurRSGE1O3Rpy1+oEGz3OCL3tr9TIff2hhm34UX
-# 3YmVIC7blrS9BV8AWowR3C5OD0OIHTqdkHU6LKO0m1HkfQKnidqjjYs3RaDIajR/
-# S58PZOsr/0KvCSHthScUxg025lnSHnIpXFks6j/Rve5+gaiRLeJgnMlBNJXu4QCl
-# ACx3ZdyvPsv3qKZXI21k06GCAjAwggIsBgkqhkiG9w0BCQYxggIdMIICGQIBATCB
+# 9w0BCQQxFgQUCUuudCgKhfcibi3tfBAu1CltOi4wDQYJKoZIhvcNAQEBBQAEggEA
+# aIiI39WtMiLJyweWI5jl86EGV6Y6KyYDjSD4Lygizx9i+JFAHX+yhpe3Rf58At7g
+# GWQniRNVN/5S7fgPxJXjLpWOMF5GmDZZ66xC+QbAPheAveufcChhf6gAZ2+ROZCF
+# sHG6yZqsyGkprJDcSnRIRZ2dbt9xw2Hwv2HncVPwpnFmJCDvKqCpYrhw8vSVjeps
+# Ta8l7/P2U+xMxlQczzRfkFtIEwLTsKFJPPf/d+w8FeLSzP8TNRVhQsQdY+kYMZAa
+# U7PghGnip/48OrqbGZ/Vv1p07PZp0XyXi7W23EnDin7thEJcJJ9oGwzAf9lQ9rwv
+# nTWylFvevjinqJP7hxuQ1KGCAjAwggIsBgkqhkiG9w0BCQYxggIdMIICGQIBATCB
 # hjByMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQL
 # ExB3d3cuZGlnaWNlcnQuY29tMTEwLwYDVQQDEyhEaWdpQ2VydCBTSEEyIEFzc3Vy
 # ZWQgSUQgVGltZXN0YW1waW5nIENBAhANQkrgvjqI/2BAIc4UAPDdMA0GCWCGSAFl
 # AwQCAQUAoGkwGAYJKoZIhvcNAQkDMQsGCSqGSIb3DQEHATAcBgkqhkiG9w0BCQUx
-# DxcNMjIwMTE2MTQzMDM3WjAvBgkqhkiG9w0BCQQxIgQgVvC4Ev0uDJWBdpvGD8+5
-# RFjk53BRVqRTA4WFkpJDQiwwDQYJKoZIhvcNAQEBBQAEggEAenXRsSI/jrRXP0dr
-# WJ0ZyG4QOGi/pfD6KcrvHndmTs4mm5KxDAahF5DvzttMS+tMuRGNaoP7Eo81tV59
-# wIyDY6YyhoHml/8HtAXchgbqIEXQFGs0jEbaddM5y9zC22duEfbwI48HJbBKZFlb
-# iU4nxLrW3WZ4gRFKd9LSfnEjFdlR2YG2OXH0dLrszhL395XOzNYj91q4G4cDinRP
-# ceITc04RYoUgMU06SZKaCX1bjdLYwwcGMM04mC8b8Xq/QryzxSFYDAwP91iC9Yok
-# 81pcbRtxkyQF/F2KKVAVwrCTnR1DGkiCkf7Ec0usjlHiT/u0hOYL9xvYsHtDzN37
-# Fx1zZg==
+# DxcNMjIwMTI0MTAyMzE0WjAvBgkqhkiG9w0BCQQxIgQgNUQh0nQ6PcWre3ccOzYw
+# SDI4pW3rS5tXpd+nvdEuLLAwDQYJKoZIhvcNAQEBBQAEggEAeP+jNvTYhJla21Yu
+# s1LgWLMto17w3gHSYWJwq2BR8qgSLukv+lq3CPbeLQv3zetisPYLaeIklmPpFtcR
+# kRVaP9/FSWv0krbnuVX5Fp4HvpNhZrT0UfSbpctyZNTm5xzJ0myq7J3bZtrRHr4A
+# vaywRL8smuwZEOhI+A+Lxz9XHlwWzH7JIBKrVgycSBCQe3OoE/UntuLBy5ud8Hod
+# 6X9FMLmzQs6mGkIJ0ohI59NeQzF0STyGkBSoZIsH6wETNrmtIzMDBHnLjc1huVsV
+# 7zXUh9gRpjcjGTOsU9D+uVv5/kPG6Q6IMIR2Hl6Xs++rmkaoUGtYzhudNNfTn6vq
+# 0zOpmA==
 # SIG # End signature block
