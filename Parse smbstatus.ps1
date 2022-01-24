@@ -16,6 +16,9 @@
 .PARAMETER port
     The SSH port to connect to
     
+.PARAMETER sshExe
+    The ssh command to use - default is ssh.exe which must be in %PATH%
+
 .PARAMETER sshOptions
     Options to pass to ssh.exe
 
@@ -26,9 +29,9 @@
     Regex for delimiter between different sections of output
 
 .EXAMPLE
-    & '.\Parse smbstatus.ps1' -connection root@grl-nas02
+    & '.\Parse smbstatus.ps1' -connection root@grl-nas02 -resolve
 
-    Connect to the Synology device grl-nas02 as user root, run the smbstatus command and parse the output into objects
+    Connect to the Synology device grl-nas02 as user root, run the smbstatus command and parse the output into objects, including attempting to resolve IP addresses to hostnames & aliases
 
 .NOTES
     For passwordless ssh connections, setup keys - https://kb.synology.com/en-uk/DSM/tutorial/How_to_log_in_to_DSM_with_key_pairs_as_admin_or_root_permission_via_SSH_on_computers - but protect/secure those keys
@@ -38,7 +41,7 @@
     Modification History:
 
     @guyrleech 2022/01/16 Initial version
-    @guyrleech 2022/01/24 Option to resolve IP address to hostname
+    @guyrleech 2022/01/24 Option to resolve IP address to hostname. Added check for ssh.exe
 #>
 
 <#
@@ -61,6 +64,7 @@ Param
     [string]$connection ,
     [switch]$resolve,
     [int]$port ,
+    [string]$sshExe = 'ssh.exe' ,
     [string]$sshOptions = '-o ConnectTimeout=15 -o batchmode=yes' ,
     [string]$command = 'smbstatus' ,
     [string]$dividerPattern = '^Locked files:'
@@ -104,12 +108,17 @@ Pid          Uid        DenyMode   Access      R/W        Oplock           Share
 19321        671089749  DENY_WRITE 0x12019f    RDWR       LEASE(R)         /volume1/Software   FSLogix/S-1-5-21-1721611859-3364803896-2099701507-1109_BillyBob/Profile_BillyBob.VHDX   Sat Jan 15 07:03:59 2022
 #>
 
+if( -Not ( Get-Command -Name $sshExe -CommandType Application -ErrorAction SilentlyContinue ) )
+{
+    Throw "Unable to locate $sshExe - try installing by running `"Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0`""
+}
+
 [bool]$gotLockedFilesLine = $false
 $headers = New-Object -TypeName System.Collections.Generic.List[string]
 $pids    = New-Object -TypeName System.Collections.Generic.List[object]
 
 ## found that using & to invoke the command put quotes around some arguments which breaks ssh.exe
-Invoke-Expression -Command "ssh.exe $sshoptions $connection $portparameter $command" | ForEach-Object `
+Invoke-Expression -Command "$sshExe $sshoptions $connection $portparameter $command" | ForEach-Object `
 {
     [string]$line = $_.Trim()
     if( $line.Length )
@@ -247,8 +256,8 @@ Invoke-Expression -Command "ssh.exe $sshoptions $connection $portparameter $comm
 # SIG # Begin signature block
 # MIIZsAYJKoZIhvcNAQcCoIIZoTCCGZ0CAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUQlgpcuXeuB3gTeOm12NIn79B
-# 0ZegghS+MIIE/jCCA+agAwIBAgIQDUJK4L46iP9gQCHOFADw3TANBgkqhkiG9w0B
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUOBgzC0SqUdEe0yntTKEqJsyW
+# Dw+gghS+MIIE/jCCA+agAwIBAgIQDUJK4L46iP9gQCHOFADw3TANBgkqhkiG9w0B
 # AQsFADByMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYD
 # VQQLExB3d3cuZGlnaWNlcnQuY29tMTEwLwYDVQQDEyhEaWdpQ2VydCBTSEEyIEFz
 # c3VyZWQgSUQgVGltZXN0YW1waW5nIENBMB4XDTIxMDEwMTAwMDAwMFoXDTMxMDEw
@@ -364,23 +373,23 @@ Invoke-Expression -Command "ssh.exe $sshoptions $connection $portparameter $comm
 # cmVkIElEIENvZGUgU2lnbmluZyBDQQIQBP3jqtvdtaueQfTZ1SF1TjAJBgUrDgMC
 # GgUAoHgwGAYKKwYBBAGCNwIBDDEKMAigAoAAoQKAADAZBgkqhkiG9w0BCQMxDAYK
 # KwYBBAGCNwIBBDAcBgorBgEEAYI3AgELMQ4wDAYKKwYBBAGCNwIBFTAjBgkqhkiG
-# 9w0BCQQxFgQUCUuudCgKhfcibi3tfBAu1CltOi4wDQYJKoZIhvcNAQEBBQAEggEA
-# aIiI39WtMiLJyweWI5jl86EGV6Y6KyYDjSD4Lygizx9i+JFAHX+yhpe3Rf58At7g
-# GWQniRNVN/5S7fgPxJXjLpWOMF5GmDZZ66xC+QbAPheAveufcChhf6gAZ2+ROZCF
-# sHG6yZqsyGkprJDcSnRIRZ2dbt9xw2Hwv2HncVPwpnFmJCDvKqCpYrhw8vSVjeps
-# Ta8l7/P2U+xMxlQczzRfkFtIEwLTsKFJPPf/d+w8FeLSzP8TNRVhQsQdY+kYMZAa
-# U7PghGnip/48OrqbGZ/Vv1p07PZp0XyXi7W23EnDin7thEJcJJ9oGwzAf9lQ9rwv
-# nTWylFvevjinqJP7hxuQ1KGCAjAwggIsBgkqhkiG9w0BCQYxggIdMIICGQIBATCB
+# 9w0BCQQxFgQUwKAxS0JkPDKUimn+Txaj8JmkTawwDQYJKoZIhvcNAQEBBQAEggEA
+# TjxzK9emEDuN+1Us+xYY1tJbawr/vsx3YS6WciGSK9iBw1v7zyO/A3QWcPnMauMT
+# osgThVkaZhY+fqKAM87tiRuAtApRYuYhsxdYxQByUxPeQcdGvZwZtT52gkBM1mbe
+# acAHKN+LfxVYKdwVtPqjFAPHnDWLv8jYheU6+Sb7is6xhfWtv9aLHTz569CcZlnz
+# Ewh6QWD7JVpipmDYPrnlqc7qeWlSN3tBYX7Ya4MfsuKCnBSyoRD87vmbafWSRiJU
+# vk+KeScg3pWZrRfaUeG1OczJMOGU32F9nwBjaAA+deB5t9/i1+9zHaKF7HWD+1P1
+# OFi5fARX5cZPZsavL/ErOaGCAjAwggIsBgkqhkiG9w0BCQYxggIdMIICGQIBATCB
 # hjByMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQL
 # ExB3d3cuZGlnaWNlcnQuY29tMTEwLwYDVQQDEyhEaWdpQ2VydCBTSEEyIEFzc3Vy
 # ZWQgSUQgVGltZXN0YW1waW5nIENBAhANQkrgvjqI/2BAIc4UAPDdMA0GCWCGSAFl
 # AwQCAQUAoGkwGAYJKoZIhvcNAQkDMQsGCSqGSIb3DQEHATAcBgkqhkiG9w0BCQUx
-# DxcNMjIwMTI0MTAyMzE0WjAvBgkqhkiG9w0BCQQxIgQgNUQh0nQ6PcWre3ccOzYw
-# SDI4pW3rS5tXpd+nvdEuLLAwDQYJKoZIhvcNAQEBBQAEggEAeP+jNvTYhJla21Yu
-# s1LgWLMto17w3gHSYWJwq2BR8qgSLukv+lq3CPbeLQv3zetisPYLaeIklmPpFtcR
-# kRVaP9/FSWv0krbnuVX5Fp4HvpNhZrT0UfSbpctyZNTm5xzJ0myq7J3bZtrRHr4A
-# vaywRL8smuwZEOhI+A+Lxz9XHlwWzH7JIBKrVgycSBCQe3OoE/UntuLBy5ud8Hod
-# 6X9FMLmzQs6mGkIJ0ohI59NeQzF0STyGkBSoZIsH6wETNrmtIzMDBHnLjc1huVsV
-# 7zXUh9gRpjcjGTOsU9D+uVv5/kPG6Q6IMIR2Hl6Xs++rmkaoUGtYzhudNNfTn6vq
-# 0zOpmA==
+# DxcNMjIwMTI0MTE0NDM3WjAvBgkqhkiG9w0BCQQxIgQgRJjwSYmmBjr82z33EUrC
+# UpdmMf3QFuEwC9YFEW1WsNgwDQYJKoZIhvcNAQEBBQAEggEAsujwMmUamAzUfHu+
+# 5dKY/4Cl/O/DAAIfIaIM9gxtdblpSotO5qEFh4EziIY2kohfBVvuwO2+Ejfk4owU
+# mJ/MjuzDDVDdWhkZcfqieAn625adb8WL4OvkC39hOe0LzloeZgJtWiCJrMePlLHa
+# E8CO2eiuPUmRi5AXhECaDyFbsonhptdEHqZXMqLB5QISMiwTCGxJJyUu1T82Lvt9
+# aSpupEsAPJZQkrT9wHmlJQJCFE/s8eG9uOcA9G4cTZa1rqgvCjVd+WI7bbhvjv13
+# 0YnxfHItXcyXlkUmcV9YMEJI2IXGWYi5Xo28TJ0yKLE9YzCOqvyvs1bjd6LfhZYj
+# KW0W2A==
 # SIG # End signature block
