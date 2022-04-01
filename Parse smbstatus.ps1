@@ -42,6 +42,7 @@
 
     @guyrleech 2022/01/16 Initial version
     @guyrleech 2022/01/24 Option to resolve IP address to hostname. Added check for ssh.exe
+    @guyrleech 2022/04/01 Fixed date parsing regex issue
 #>
 
 <#
@@ -168,7 +169,7 @@ Invoke-Expression -Command "$sshExe $sshoptions $connection $portparameter $comm
                         elseif( $headers[ $index ] -eq 'name' )
                         {
                             ## file name could have spaces so we grab the date off the end of the line which allows us to then work out where the file name is
-                            if( $line -match '  (\w{3} \w{3} \d* \d{2}:\d{2}:\d{2} \d{4})$' )
+                            if( $line -match '  (\w{3} \w{3}\s+\d*\s+\d{2}:\d{2}:\d{2} \d{4})$' )
                             {
                                 $time = New-Object -TypeName datetime
                                 if( [datetime]::TryParseExact( $matches[1] , 'ddd MMM d HH:mm:ss yyyy' , [System.Globalization.CultureInfo]::InvariantCulture , [System.Globalization.DateTimeStyles]::AllowWhiteSpaces , [ref]$time ) )
@@ -256,8 +257,8 @@ Invoke-Expression -Command "$sshExe $sshoptions $connection $portparameter $comm
 # SIG # Begin signature block
 # MIIZsAYJKoZIhvcNAQcCoIIZoTCCGZ0CAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUOBgzC0SqUdEe0yntTKEqJsyW
-# Dw+gghS+MIIE/jCCA+agAwIBAgIQDUJK4L46iP9gQCHOFADw3TANBgkqhkiG9w0B
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUfJI/FkmCWZmTOvB7pEC3wH1l
+# H9WgghS+MIIE/jCCA+agAwIBAgIQDUJK4L46iP9gQCHOFADw3TANBgkqhkiG9w0B
 # AQsFADByMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYD
 # VQQLExB3d3cuZGlnaWNlcnQuY29tMTEwLwYDVQQDEyhEaWdpQ2VydCBTSEEyIEFz
 # c3VyZWQgSUQgVGltZXN0YW1waW5nIENBMB4XDTIxMDEwMTAwMDAwMFoXDTMxMDEw
@@ -373,23 +374,23 @@ Invoke-Expression -Command "$sshExe $sshoptions $connection $portparameter $comm
 # cmVkIElEIENvZGUgU2lnbmluZyBDQQIQBP3jqtvdtaueQfTZ1SF1TjAJBgUrDgMC
 # GgUAoHgwGAYKKwYBBAGCNwIBDDEKMAigAoAAoQKAADAZBgkqhkiG9w0BCQMxDAYK
 # KwYBBAGCNwIBBDAcBgorBgEEAYI3AgELMQ4wDAYKKwYBBAGCNwIBFTAjBgkqhkiG
-# 9w0BCQQxFgQUwKAxS0JkPDKUimn+Txaj8JmkTawwDQYJKoZIhvcNAQEBBQAEggEA
-# TjxzK9emEDuN+1Us+xYY1tJbawr/vsx3YS6WciGSK9iBw1v7zyO/A3QWcPnMauMT
-# osgThVkaZhY+fqKAM87tiRuAtApRYuYhsxdYxQByUxPeQcdGvZwZtT52gkBM1mbe
-# acAHKN+LfxVYKdwVtPqjFAPHnDWLv8jYheU6+Sb7is6xhfWtv9aLHTz569CcZlnz
-# Ewh6QWD7JVpipmDYPrnlqc7qeWlSN3tBYX7Ya4MfsuKCnBSyoRD87vmbafWSRiJU
-# vk+KeScg3pWZrRfaUeG1OczJMOGU32F9nwBjaAA+deB5t9/i1+9zHaKF7HWD+1P1
-# OFi5fARX5cZPZsavL/ErOaGCAjAwggIsBgkqhkiG9w0BCQYxggIdMIICGQIBATCB
+# 9w0BCQQxFgQU6U0f8MK2H45zwOn0W/EBcJ5pamswDQYJKoZIhvcNAQEBBQAEggEA
+# MnpRc6w2JuViHNoyRH1eHOjxZjhdj3+QoAQspNLOk3+26oAKWp8L1aIKOM21FD7o
+# mnjfRp15K5vdnV1Z6VQ5SFhq1q16nY+G5HJtO77M+/3S+/EkSsxOkZ0h8e5g7BIR
+# 4srsJoVZCe7cBOw2NmZO1L5jXUjroriwohSRIiugurQ0lLTFIC3vLCEwaKsWHyWO
+# QIQ+XM2MgcyrcX20U1lAuW7wniHjCRqbpu3MF989GcyHUE65el6awA2HcbWM0RqC
+# 9P7j4NJ7zDYdLtUIOCDeKChR9GD1jz7s74ox5NFV/fbjGA+Z8kRM0akiqunQM+9c
+# L5WeSM+XNaLUuaG51m9mhaGCAjAwggIsBgkqhkiG9w0BCQYxggIdMIICGQIBATCB
 # hjByMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQL
 # ExB3d3cuZGlnaWNlcnQuY29tMTEwLwYDVQQDEyhEaWdpQ2VydCBTSEEyIEFzc3Vy
 # ZWQgSUQgVGltZXN0YW1waW5nIENBAhANQkrgvjqI/2BAIc4UAPDdMA0GCWCGSAFl
 # AwQCAQUAoGkwGAYJKoZIhvcNAQkDMQsGCSqGSIb3DQEHATAcBgkqhkiG9w0BCQUx
-# DxcNMjIwMTI0MTE0NDM3WjAvBgkqhkiG9w0BCQQxIgQgRJjwSYmmBjr82z33EUrC
-# UpdmMf3QFuEwC9YFEW1WsNgwDQYJKoZIhvcNAQEBBQAEggEAsujwMmUamAzUfHu+
-# 5dKY/4Cl/O/DAAIfIaIM9gxtdblpSotO5qEFh4EziIY2kohfBVvuwO2+Ejfk4owU
-# mJ/MjuzDDVDdWhkZcfqieAn625adb8WL4OvkC39hOe0LzloeZgJtWiCJrMePlLHa
-# E8CO2eiuPUmRi5AXhECaDyFbsonhptdEHqZXMqLB5QISMiwTCGxJJyUu1T82Lvt9
-# aSpupEsAPJZQkrT9wHmlJQJCFE/s8eG9uOcA9G4cTZa1rqgvCjVd+WI7bbhvjv13
-# 0YnxfHItXcyXlkUmcV9YMEJI2IXGWYi5Xo28TJ0yKLE9YzCOqvyvs1bjd6LfhZYj
-# KW0W2A==
+# DxcNMjIwNDAxMTYwNzEyWjAvBgkqhkiG9w0BCQQxIgQglhc8+5AyOUfWyUQgD5WA
+# 29G/dohtatDCrFdkBgDmwaYwDQYJKoZIhvcNAQEBBQAEggEAoVsNi+nttDmYBymi
+# H+dXkT6RaJ6yWu0S3oNATJjxu11axPOXwVDqHmKIuljOjB7ThyF7/HUvnzFE9axT
+# Aa8eUuHWzdkzWr0e0QEaP7YcdLjpvb9rFvxP6KFL1g+/4vOpax24iX4kUvGWpyW7
+# X07BIe8HOAp5PP3S0QSmRkAoB35EErLOhLl44Uu/wONVBy/W4+Vs8h+zTy1Zuf+J
+# uXl/yTY05HXkPwzS8vtkKyom2i7evPTpwxtbfDOhp/7dsUyPG4b+xpFlmeLNmGN9
+# q0QV3QN1+iYMxNSTp4XCebJNbimsMZMMXSa7+w3ywhdru1nbh7hWtWLq77Takv/u
+# 6tjW4g==
 # SIG # End signature block
