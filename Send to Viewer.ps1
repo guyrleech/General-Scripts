@@ -10,6 +10,10 @@
     06/12/2020  GRL  Tidy up & optimisation
     07/12/2020  GRL  Stopped windows being topmost
     07/12/2020  GRL  Check type of data in clipboard if not text
+    05/11/2022  GRL  Added dark mode and search
+    15/05/2024  GRL  Changed ReadAllLines to ReadLines, added file list to output when clipboard contains file drop list
+
+    TODO colour parameters, font, size via reg value
 #>
 
 [CmdletBinding()]
@@ -22,17 +26,40 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:TextViewer"
         mc:Ignorable="d"
-        Title="Text Viewer" Height="450" Width="800">
+        Title="Text Viewer" Height="450" Width="800" Background="Black">
     <Grid>
-        <RichTextBox x:Name="richtextboxMain" HorizontalAlignment="Left" Margin="0" VerticalAlignment="Top" IsReadOnly="False" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" BorderThickness="0" FontFamily="Consolas" FontSize="14">
+        <RichTextBox x:Name="richtextboxMain" HorizontalAlignment="Left" Margin="0" VerticalAlignment="Top" IsReadOnly="False" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" BorderThickness="0" FontFamily="Consolas" FontSize="14" Foreground="#FD7609" Background="Black">
             <FlowDocument>
-                <Paragraph>
-                    <Run/>
+                <Paragraph x:Name="paragraph">
+                    <Run x:Name="run"/>
                 </Paragraph>
             </FlowDocument>
         </RichTextBox>
     </Grid>
 </Window>
+'@
+
+[string]$searchWindowXAML = @'
+<Window x:Class="Viewer.Window1"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:Viewer"
+        mc:Ignorable="d"
+        Title="Search" Height="465" Width="828">
+    <Grid Margin="0,0,439,308">
+        <Label Content="Regex" HorizontalAlignment="Left" Height="34" Margin="16,13,0,0" VerticalAlignment="Top" Width="64" Grid.ColumnSpan="2"/>
+        <RadioButton x:Name="radioButtonUp" Content="Up" GroupName="Direction" HorizontalAlignment="Left" Height="22" Margin="16,53,0,0" VerticalAlignment="Top" Width="99" IsChecked="False" Grid.ColumnSpan="2"/>
+        <RadioButton x:Name="radioButtonDown" Content="Down" GroupName="Direction" HorizontalAlignment="Left" Height="22" Margin="82,53,0,0" VerticalAlignment="Top" Width="98" IsChecked="True"/>
+        <Button x:Name="buttonFind" Content="_Find" Grid.ColumnSpan="2" HorizontalAlignment="Left" Height="36" Margin="20,88,0,0" VerticalAlignment="Top" Width="95" IsDefault="True"/>
+        <Button x:Name="buttonCancel" Content="_Cancel" HorizontalAlignment="Left" Height="36" Margin="237,88,0,0" VerticalAlignment="Top" Width="94" IsCancel="True"/>
+        <TextBox x:Name="textBoxSearchText" Grid.Column="1" HorizontalAlignment="Center" Height="34" Margin="0,10,0,95" TextWrapping="Wrap" Text="" Width="252"/>
+        <Button x:Name="buttonFindAll" Content="Find _All" HorizontalAlignment="Left" Height="36" Margin="126,88,0,0" VerticalAlignment="Top" Width="95" IsDefault="True"/>
+        <CheckBox x:Name="checkBoxCaseSensitive" Content="Case Sensitive" HorizontalAlignment="Left" Height="18" Margin="174,53,0,0" VerticalAlignment="Top" Width="184"/>
+
+    </Grid>
+</Window>   
 '@
 
 Function New-GUI( $inputXAML )
@@ -62,6 +89,58 @@ Function New-GUI( $inputXAML )
     $form ## return
 }
 
+Function Set-HighlightedText
+{
+    Param
+    (
+        [string]$searchText ,
+        [switch]$caseSensitive ,
+        [switch]$findAll
+    )
+    
+    [int]$offset = -1
+
+    if( -Not [string]::IsNullOrEmpty( $searchText ))
+    {
+        $startPoint = $(if( $findAll ) { $WPFrichtextboxMain.Document.ContentStart } else { $WPFrichtextboxMain.CaretPosition })
+        $textRange = New-Object -TypeName System.Windows.Documents.TextRange -ArgumentList $startPoint , $WPFrichtextboxMain.Document.ContentEnd
+
+        ## IndexOf is case sensitive so if case-insenistive requested, convert search and text to same case
+        [string]$textToSearch = $null
+        if( $caseSensitive )
+        {
+            $textToSearch = $textRange.Text
+        }
+        else
+        {
+            $textToSearch = $textRange.Text.ToLower()
+            $searchText = $searchText.ToLower()
+        }
+
+        if( ($offset = $textToSearch.IndexOf( $searchText )) -ge 0 )
+        {
+            $currentPosition = $textRange.Start.GetInsertionPosition( [System.Windows.Documents.LogicalDirection]::Forward )
+            $selectionStart = $currentPosition.GetPositionAtOffset( $offset , [System.Windows.Documents.LogicalDirection]::Forward)
+            $selectionEnd = $currentPosition.GetPositionAtOffset( $offset + $searchText.Length , [System.Windows.Documents.LogicalDirection]::Forward)
+            if( $selection = New-Object -TypeName System.Windows.Documents.TextRange -ArgumentList $selectionStart , $selectionend )
+            {
+                ## need to move the caret to this position so we can scroll to it/make it visible and then make selection
+                $WPFrichtextboxMain.CaretPosition = $selectionStart
+                $WPFrichtextboxMain.Selection.Select( $selection.Start , $selection.End )
+                if( $frameworkContentElement =  [System.Windows.FrameworkContentElement]$selectionStart.Parent )
+                {
+                    $frameworkContentElement.BringIntoView()                                                                                                                                                                                          
+                }
+            }
+            $WPFrichtextboxMain.Focus()    
+        }
+        else
+        {
+            [void][Windows.MessageBox]::Show( $searchText , 'Text Not Found' , 'OK' , 'Information' )
+        }
+    }
+}
+
 Add-Type -AssemblyName PresentationCore , PresentationFramework , System.Windows.Forms
 
 if( $args -and $args.Count )
@@ -74,7 +153,7 @@ if( $args -and $args.Count )
 
     if( ! ( $functionDefinition = Get-Content -Path Function:\New-GUI ) )
     {
-        Throw 'To get definition for function New-GUI'
+        Throw 'Failed to get definition for function New-GUI'
     }
 
     ## use runspaces so we can have multiple files open at once, eg to compare
@@ -129,7 +208,7 @@ if( $args -and $args.Count )
 
                 if( $mainForm = New-GUI -inputXAML $mainwindowXAML )
                 {
-                    [System.IO.File]::ReadAllLines( $file ) | . { Process `
+                    [System.IO.File]::ReadLines( $file ) | . { Process `
                     {
                         $WPFrichtextboxMain.AppendText( "$($_)`r" )
                     }}
@@ -137,7 +216,7 @@ if( $args -and $args.Count )
                     if( ( $textRange = New-Object -TypeName System.Windows.Documents.TextRange( $WPFrichtextboxMain.Document.ContentStart , $WPFrichtextboxMain.Document.ContentEnd  ) ) -and $textRange.Text.Length -gt 0 )
                     {
                         $mainForm.Title = $file
-                        ## if launched from shortcut set to run minimised, we most restore the window
+                        ## if launched from shortcut set to run minimised, we must restore the window
                         $mainForm.Add_Loaded( {
                             $_.Handled = $true
                             $mainForm.WindowState = 'Normal'
@@ -179,12 +258,66 @@ else ## no file names so put clipboard contents, if text, into a window
     {
         if( $mainForm = New-GUI -inputXAML $mainwindowXAML )
         {
+            $script:lastSearch = $null
             $mainForm.Title = "<Contents of clipboard ($($content.Length) characters)>"
             ## if launched from shortcut set to run minimised, we most restore the window
             $mainForm.Add_Loaded( {
                 $_.Handled = $true
                 $mainForm.WindowState = 'Normal'
                 $mainForm.Focus()
+            })
+            $mainForm.add_KeyDown({
+                Param
+                (
+                  [Parameter(Mandatory)][Object]$sender,
+                  [Parameter(Mandatory)][Windows.Input.KeyEventArgs]$event
+                )
+                if( $event -and ($modifiers = [System.Windows.Input.KeyBoard]::Modifiers) -and $modifiers -eq [System.Windows.Input.ModifierKeys]::Control )
+                {
+                    if( $event.Key -ieq 'F' )
+                    {
+                        if( $searchForm = New-GUI -inputXAML $searchWindowXAML )
+                        {
+                            $WPFtextBoxSearchText.Text = $script:lastSearch
+                            $WPFtextBoxSearchText.Focus()
+
+                            $WPFbuttonFind.Add_Click({
+                                $searchForm.DialogResult = $true 
+                                $searchForm.Close()
+                                Set-HighlightedText -caseSensitive:($wpfcheckBoxCaseSensitive.IsChecked) -searchText $WPFtextBoxSearchText.Text
+                                $_.Handled = $true
+                            })
+                            $WPFbuttonFindAll.Add_Click({
+                                $searchForm.DialogResult = $true 
+                                $searchForm.Close()
+                                Set-HighlightedText -findAll -caseSensitive:($wpfcheckBoxCaseSensitive.IsChecked) -searchText $WPFtextBoxSearchText.Text
+                                $_.Handled = $true
+                            })
+                            if( $searchDialogResult = $searchForm.ShowDialog() )
+                            {
+                                $script:lastSearch = $WPFtextBoxSearchText.Text
+                            }
+                        }
+                        $_.Handled = $true
+                    }
+                    elseif( $event.Key -ieq 'i' )
+                    {
+                        $WPFrichtextboxMain.FontSifize += 2
+                        $_.Handled = $true
+                    }
+                    elseif( $event.Key -ieq 'd' )
+                    {
+                        if( $WPFrichtextboxMain.FontSize -ge 4 )
+                        {
+                            $WPFrichtextboxMain.FontSize -= 2
+                        }
+                        $_.Handled = $true
+                    }
+                }
+                elseif( $event.Key -ieq 'F3' )
+                {
+                    Set-HighlightedText -caseSensitive:($wpfcheckBoxCaseSensitive.IsChecked) -searchText $WPFtextBoxSearchText.Text
+                }
             })
             $WPFrichtextboxMain.AppendText( $content )
             [void]$mainForm.ShowDialog()
@@ -202,7 +335,8 @@ else ## no file names so put clipboard contents, if text, into a window
         }
         elseif( $clipboard = Get-Clipboard -Format FileDropList -ErrorAction SilentlyContinue )
         {
-            [void][Windows.MessageBox]::Show( "Clipboard contains a file drop list" , 'Viewer Error' , 'OK' , 'Exclamation' )
+            [string]$messageText = "Clipboard contains a file drop list of $($clipboard.Count) items`r`n`r`n$($clipboard.FullName -join "`r`n")"
+            [void][Windows.MessageBox]::Show( $messageText , 'Viewer Error' , 'OK' , 'Exclamation' )
         }
         else
         {
@@ -210,77 +344,3 @@ else ## no file names so put clipboard contents, if text, into a window
         }
     }
 }
-
-# SIG # Begin signature block
-# MIINRQYJKoZIhvcNAQcCoIINNjCCDTICAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
-# gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUP5VkyEaR5czSq91RYBcdEDMW
-# e3egggqHMIIFMDCCBBigAwIBAgIQBAkYG1/Vu2Z1U0O1b5VQCDANBgkqhkiG9w0B
-# AQsFADBlMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYD
-# VQQLExB3d3cuZGlnaWNlcnQuY29tMSQwIgYDVQQDExtEaWdpQ2VydCBBc3N1cmVk
-# IElEIFJvb3QgQ0EwHhcNMTMxMDIyMTIwMDAwWhcNMjgxMDIyMTIwMDAwWjByMQsw
-# CQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3d3cu
-# ZGlnaWNlcnQuY29tMTEwLwYDVQQDEyhEaWdpQ2VydCBTSEEyIEFzc3VyZWQgSUQg
-# Q29kZSBTaWduaW5nIENBMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA
-# +NOzHH8OEa9ndwfTCzFJGc/Q+0WZsTrbRPV/5aid2zLXcep2nQUut4/6kkPApfmJ
-# 1DcZ17aq8JyGpdglrA55KDp+6dFn08b7KSfH03sjlOSRI5aQd4L5oYQjZhJUM1B0
-# sSgmuyRpwsJS8hRniolF1C2ho+mILCCVrhxKhwjfDPXiTWAYvqrEsq5wMWYzcT6s
-# cKKrzn/pfMuSoeU7MRzP6vIK5Fe7SrXpdOYr/mzLfnQ5Ng2Q7+S1TqSp6moKq4Tz
-# rGdOtcT3jNEgJSPrCGQ+UpbB8g8S9MWOD8Gi6CxR93O8vYWxYoNzQYIH5DiLanMg
-# 0A9kczyen6Yzqf0Z3yWT0QIDAQABo4IBzTCCAckwEgYDVR0TAQH/BAgwBgEB/wIB
-# ADAOBgNVHQ8BAf8EBAMCAYYwEwYDVR0lBAwwCgYIKwYBBQUHAwMweQYIKwYBBQUH
-# AQEEbTBrMCQGCCsGAQUFBzABhhhodHRwOi8vb2NzcC5kaWdpY2VydC5jb20wQwYI
-# KwYBBQUHMAKGN2h0dHA6Ly9jYWNlcnRzLmRpZ2ljZXJ0LmNvbS9EaWdpQ2VydEFz
-# c3VyZWRJRFJvb3RDQS5jcnQwgYEGA1UdHwR6MHgwOqA4oDaGNGh0dHA6Ly9jcmw0
-# LmRpZ2ljZXJ0LmNvbS9EaWdpQ2VydEFzc3VyZWRJRFJvb3RDQS5jcmwwOqA4oDaG
-# NGh0dHA6Ly9jcmwzLmRpZ2ljZXJ0LmNvbS9EaWdpQ2VydEFzc3VyZWRJRFJvb3RD
-# QS5jcmwwTwYDVR0gBEgwRjA4BgpghkgBhv1sAAIEMCowKAYIKwYBBQUHAgEWHGh0
-# dHBzOi8vd3d3LmRpZ2ljZXJ0LmNvbS9DUFMwCgYIYIZIAYb9bAMwHQYDVR0OBBYE
-# FFrEuXsqCqOl6nEDwGD5LfZldQ5YMB8GA1UdIwQYMBaAFEXroq/0ksuCMS1Ri6en
-# IZ3zbcgPMA0GCSqGSIb3DQEBCwUAA4IBAQA+7A1aJLPzItEVyCx8JSl2qB1dHC06
-# GsTvMGHXfgtg/cM9D8Svi/3vKt8gVTew4fbRknUPUbRupY5a4l4kgU4QpO4/cY5j
-# DhNLrddfRHnzNhQGivecRk5c/5CxGwcOkRX7uq+1UcKNJK4kxscnKqEpKBo6cSgC
-# PC6Ro8AlEeKcFEehemhor5unXCBc2XGxDI+7qPjFEmifz0DLQESlE/DmZAwlCEIy
-# sjaKJAL+L3J+HNdJRZboWR3p+nRka7LrZkPas7CM1ekN3fYBIM6ZMWM9CBoYs4Gb
-# T8aTEAb8B4H6i9r5gkn3Ym6hU/oSlBiFLpKR6mhsRDKyZqHnGKSaZFHvMIIFTzCC
-# BDegAwIBAgIQBP3jqtvdtaueQfTZ1SF1TjANBgkqhkiG9w0BAQsFADByMQswCQYD
-# VQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3d3cuZGln
-# aWNlcnQuY29tMTEwLwYDVQQDEyhEaWdpQ2VydCBTSEEyIEFzc3VyZWQgSUQgQ29k
-# ZSBTaWduaW5nIENBMB4XDTIwMDcyMDAwMDAwMFoXDTIzMDcyNTEyMDAwMFowgYsx
-# CzAJBgNVBAYTAkdCMRIwEAYDVQQHEwlXYWtlZmllbGQxJjAkBgNVBAoTHVNlY3Vy
-# ZSBQbGF0Zm9ybSBTb2x1dGlvbnMgTHRkMRgwFgYDVQQLEw9TY3JpcHRpbmdIZWF2
-# ZW4xJjAkBgNVBAMTHVNlY3VyZSBQbGF0Zm9ybSBTb2x1dGlvbnMgTHRkMIIBIjAN
-# BgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAr20nXdaAALva07XZykpRlijxfIPk
-# TUQFAxQgXTW2G5Jc1YQfIYjIePC6oaD+3Zc2WN2Jrsc7bj5Qe5Nj4QHHHf3jopLy
-# g8jXl7Emt1mlyzUrtygoQ1XpBBXnv70dvZibro6dXmK8/M37w5pEAj/69+AYM7IO
-# Fz2CrTIrQjvwjELSOkZ2o+z+iqfax9Z1Tv82+yg9iDHnUxZWhaiEXk9BFRv9WYsz
-# qTXQTEhv8fmUI2aZX48so4mJhNGu7Vp1TGeCik1G959Qk7sFh3yvRugjY0IIXBXu
-# A+LRT00yjkgMe8XoDdaBoIn5y3ZrQ7bCVDjoTrcn/SqfHvhEEMj1a1f0zQIDAQAB
-# o4IBxTCCAcEwHwYDVR0jBBgwFoAUWsS5eyoKo6XqcQPAYPkt9mV1DlgwHQYDVR0O
-# BBYEFE16ovlqIk5uX2JQy6og0OCPrsnJMA4GA1UdDwEB/wQEAwIHgDATBgNVHSUE
-# DDAKBggrBgEFBQcDAzB3BgNVHR8EcDBuMDWgM6Axhi9odHRwOi8vY3JsMy5kaWdp
-# Y2VydC5jb20vc2hhMi1hc3N1cmVkLWNzLWcxLmNybDA1oDOgMYYvaHR0cDovL2Ny
-# bDQuZGlnaWNlcnQuY29tL3NoYTItYXNzdXJlZC1jcy1nMS5jcmwwTAYDVR0gBEUw
-# QzA3BglghkgBhv1sAwEwKjAoBggrBgEFBQcCARYcaHR0cHM6Ly93d3cuZGlnaWNl
-# cnQuY29tL0NQUzAIBgZngQwBBAEwgYQGCCsGAQUFBwEBBHgwdjAkBggrBgEFBQcw
-# AYYYaHR0cDovL29jc3AuZGlnaWNlcnQuY29tME4GCCsGAQUFBzAChkJodHRwOi8v
-# Y2FjZXJ0cy5kaWdpY2VydC5jb20vRGlnaUNlcnRTSEEyQXNzdXJlZElEQ29kZVNp
-# Z25pbmdDQS5jcnQwDAYDVR0TAQH/BAIwADANBgkqhkiG9w0BAQsFAAOCAQEAU9zO
-# 9UpTkPL8DNrcbIaf1w736CgWB5KRQsmp1mhXbGECUCCpOCzlYFCSeiwH9MT0je3W
-# aYxWqIpUMvAI8ndFPVDp5RF+IJNifs+YuLBcSv1tilNY+kfa2OS20nFrbFfl9QbR
-# 4oacz8sBhhOXrYeUOU4sTHSPQjd3lpyhhZGNd3COvc2csk55JG/h2hR2fK+m4p7z
-# sszK+vfqEX9Ab/7gYMgSo65hhFMSWcvtNO325mAxHJYJ1k9XEUTmq828ZmfEeyMq
-# K9FlN5ykYJMWp/vK8w4c6WXbYCBXWL43jnPyKT4tpiOjWOI6g18JMdUxCG41Hawp
-# hH44QHzE1NPeC+1UjTGCAigwggIkAgEBMIGGMHIxCzAJBgNVBAYTAlVTMRUwEwYD
-# VQQKEwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5jb20xMTAv
-# BgNVBAMTKERpZ2lDZXJ0IFNIQTIgQXNzdXJlZCBJRCBDb2RlIFNpZ25pbmcgQ0EC
-# EAT946rb3bWrnkH02dUhdU4wCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwxCjAI
-# oAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGCNwIB
-# CzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFPzNS5oyZfB1LgyKcYCx
-# s/XPF694MA0GCSqGSIb3DQEBAQUABIIBAI/UDn58rkRzTdEYP12DYQV9M1twK2ju
-# C2EUxm7IBzNnF/c4nOS3SI9cAEIvf6pCszL67RJBA290jebj4UlPa//b+8mNCie1
-# AmgrjWAxSKQUgFQqOag9NeTqE3DwSVG+9KXwWdZ03XRKQMotdNzh9OngL4cMhA3n
-# DRjtCnaqzdTUnV5rNtKC34OIP1JHdugVLwtXw7hyte9ltuPb4I5KhQidP4RW1MJ3
-# RCRVrcMzTD2o4U36rGnL2t92xd38ori5e+dXp/cS9ngVFY7Gs9ONypzCCrn3uB3P
-# HUA1kRl+kHrGgiC9zE75DikVOIwtW9z9QaLL3yAcR9/jNpZQcadJVW4=
-# SIG # End signature block
