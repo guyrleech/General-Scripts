@@ -12,6 +12,7 @@
     07/12/2020  GRL  Check type of data in clipboard if not text
     05/11/2022  GRL  Added dark mode and search
     15/05/2024  GRL  Changed ReadAllLines to ReadLines, added file list to output when clipboard contains file drop list
+    16/05/2024  GRL  Change window title if parent is explorer to help identify window if left open
 
     TODO colour parameters, font, size via reg value
 #>
@@ -145,6 +146,20 @@ Add-Type -AssemblyName PresentationCore , PresentationFramework , System.Windows
 
 if( $args -and $args.Count )
 {
+    if( $host -and $host.name -imatch 'console' )
+    {
+        $parent = $null
+        $parent = Get-Process -Id (Get-CimInstance -ClassName win32_process -Filter "ProcessId = '$pid'").ParentProcessId
+
+        if( $parent -and $parent.Name -ieq 'explorer' )
+        {
+            ## replace double letters with single to make shorter to fit into terminal tab, wg dd/MM/yyyy to d/M/YY
+            ## should also work with the illogical US date format
+            [string]$dateFormat= (Get-Culture).DateTimeFormat.ShortDatePattern -replace '(\w)\1' , '$1'
+            [console]::Title = "$(Split-Path -Path $PSCommandPath -Leaf) $([datetime]::Now.ToString('t')) $([datetime]::Now.ToString( $dateFormat ))"
+        }
+    }
+
     ## as GUI is built in runspace so is harder to see errors, build a dummy now to check it is ok
     if( ! ( New-GUI -inputXAML $mainwindowXAML ) )
     {
