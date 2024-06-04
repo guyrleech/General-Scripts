@@ -7,17 +7,15 @@
     Modification History:
 
     26/11/18  GRL   Put '<Folder>' in results when item is a folder as cannot checksum a folder, only files
-
     05/12/18  GRL   Don't show GUI if environment variable CHECKSUM_ALGORITHM is set as it uses that as the checksum algorithm
-
     27/09/20  GRL   Added support for folders
-
     07/10/20  GRL   Added file size, last write time and file version, or product version if file version empty, properties to output
-
     05/12/20  GRL   Minimise PowerShell window if parent is explorer so sendto shortcut doesn't have to be minimised but Out-Gridview window will not be minimised as no easy way to restore grid view windows
-
     12/12/20  GRL   Fixed bug showing wrong file size
+    04/06/24  GRL   Add window title so can tell it's summer. Set verbose on so PS window shows what's occurring
 #>
+
+$VerbosePreference = 'Continue'
 
 [string]$mainwindowXAML = @'
 <Window x:Class="Checksummer.MainWindow"
@@ -58,6 +56,8 @@ Function Get-HashAndProperties
         [AllowNull()]
         $properties 
     )
+
+    Write-Verbose -Message "$([datetime]::Now.ToString('G')): calculating $algorithm of `"$path`""
 
     $hash = Get-FileHash -Path $path -Algorithm $algorithm -ErrorAction Continue | Select-Object -ExpandProperty Hash
 
@@ -113,7 +113,21 @@ Function Load-GUI( $inputXml )
     return $form
 }
 
-if( ! $args -or ! $args.Count )
+if( $host -and $host.name -imatch 'console' )
+{
+    $parent = $null
+    $parent = Get-Process -Id (Get-CimInstance -ClassName win32_process -Filter "ProcessId = '$pid'" -Verbose:$false).ParentProcessId
+
+    if( $parent -and $parent.Name -ieq 'explorer' )
+    {
+        ## replace double letters with single to make shorter to fit into terminal tab, wg dd/MM/yyyy to d/M/YY
+        ## should also work with the illogical US date format
+        [string]$dateFormat= (Get-Culture).DateTimeFormat.ShortDatePattern -replace '(\w)\1' , '$1'
+        [console]::Title = "$(Split-Path -Path $PSCommandPath -Leaf) $([datetime]::Now.ToString('t')) $([datetime]::Now.ToString( $dateFormat ))"
+    }
+}
+
+if( -Not $args -or $args.Count -eq 0 )
 {
     $null = [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.VisualBasic")
     [string]$errorMessage = "No file names passed as arguments"
@@ -123,6 +137,8 @@ if( ! $args -or ! $args.Count )
 
 [string]$algorithm = $env:CHECKSUM_ALGORITHM
 
+Write-Verbose -Message "$($args.count) arguments passed"
+
 ## if algorithm not in %CHECKSUM_ALGORITHM% then prompt via GUI
 
 if( [string]::IsNullOrEmpty( $algorithm ) )
@@ -131,7 +147,7 @@ if( [string]::IsNullOrEmpty( $algorithm ) )
 
     $mainForm = Load-GUI $mainwindowXAML
 
-    if( ! $mainForm )
+    if( -Not $mainForm )
     {
         return
     }
@@ -156,6 +172,8 @@ if( [string]::IsNullOrEmpty( $algorithm ) )
         $_.Handled = $true
     })
 
+    Write-Verbose -Message "Showing GUI to select hash algorithm"
+
     if( $mainForm.ShowDialog() )
     {
         $algorithm = $WPFcomboAlgorithm.SelectedItem.Content
@@ -166,7 +184,7 @@ if( ! [string]::IsNullOrEmpty( $algorithm ) )
 {
     ## can't easily explicitly make out-gridview window foreground/restored so if parent is explorer.exe we'll hide the PowerShell window
 
-    if( ( [int]$parentProcessId = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = '$pid'" | Select-Object -ExpandProperty ParentProcessId ) `
+    if( ( [int]$parentProcessId = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = '$pid'" -Verbose:$false | Select-Object -ExpandProperty ParentProcessId ) `
         -and ($parentProcess = Get-Process -Id $parentProcessId -ErrorAction SilentlyContinue) -and $parentProcess.Name -eq 'explorer' )
     {
         ## Executing window may be visible so make it not so
@@ -234,76 +252,3 @@ if( ! [string]::IsNullOrEmpty( $algorithm ) )
         }
     }
 }
-# SIG # Begin signature block
-# MIINRQYJKoZIhvcNAQcCoIINNjCCDTICAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
-# gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUI2t2om6d44I6eyyftN+i9OWu
-# jLygggqHMIIFMDCCBBigAwIBAgIQBAkYG1/Vu2Z1U0O1b5VQCDANBgkqhkiG9w0B
-# AQsFADBlMQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYD
-# VQQLExB3d3cuZGlnaWNlcnQuY29tMSQwIgYDVQQDExtEaWdpQ2VydCBBc3N1cmVk
-# IElEIFJvb3QgQ0EwHhcNMTMxMDIyMTIwMDAwWhcNMjgxMDIyMTIwMDAwWjByMQsw
-# CQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3d3cu
-# ZGlnaWNlcnQuY29tMTEwLwYDVQQDEyhEaWdpQ2VydCBTSEEyIEFzc3VyZWQgSUQg
-# Q29kZSBTaWduaW5nIENBMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA
-# +NOzHH8OEa9ndwfTCzFJGc/Q+0WZsTrbRPV/5aid2zLXcep2nQUut4/6kkPApfmJ
-# 1DcZ17aq8JyGpdglrA55KDp+6dFn08b7KSfH03sjlOSRI5aQd4L5oYQjZhJUM1B0
-# sSgmuyRpwsJS8hRniolF1C2ho+mILCCVrhxKhwjfDPXiTWAYvqrEsq5wMWYzcT6s
-# cKKrzn/pfMuSoeU7MRzP6vIK5Fe7SrXpdOYr/mzLfnQ5Ng2Q7+S1TqSp6moKq4Tz
-# rGdOtcT3jNEgJSPrCGQ+UpbB8g8S9MWOD8Gi6CxR93O8vYWxYoNzQYIH5DiLanMg
-# 0A9kczyen6Yzqf0Z3yWT0QIDAQABo4IBzTCCAckwEgYDVR0TAQH/BAgwBgEB/wIB
-# ADAOBgNVHQ8BAf8EBAMCAYYwEwYDVR0lBAwwCgYIKwYBBQUHAwMweQYIKwYBBQUH
-# AQEEbTBrMCQGCCsGAQUFBzABhhhodHRwOi8vb2NzcC5kaWdpY2VydC5jb20wQwYI
-# KwYBBQUHMAKGN2h0dHA6Ly9jYWNlcnRzLmRpZ2ljZXJ0LmNvbS9EaWdpQ2VydEFz
-# c3VyZWRJRFJvb3RDQS5jcnQwgYEGA1UdHwR6MHgwOqA4oDaGNGh0dHA6Ly9jcmw0
-# LmRpZ2ljZXJ0LmNvbS9EaWdpQ2VydEFzc3VyZWRJRFJvb3RDQS5jcmwwOqA4oDaG
-# NGh0dHA6Ly9jcmwzLmRpZ2ljZXJ0LmNvbS9EaWdpQ2VydEFzc3VyZWRJRFJvb3RD
-# QS5jcmwwTwYDVR0gBEgwRjA4BgpghkgBhv1sAAIEMCowKAYIKwYBBQUHAgEWHGh0
-# dHBzOi8vd3d3LmRpZ2ljZXJ0LmNvbS9DUFMwCgYIYIZIAYb9bAMwHQYDVR0OBBYE
-# FFrEuXsqCqOl6nEDwGD5LfZldQ5YMB8GA1UdIwQYMBaAFEXroq/0ksuCMS1Ri6en
-# IZ3zbcgPMA0GCSqGSIb3DQEBCwUAA4IBAQA+7A1aJLPzItEVyCx8JSl2qB1dHC06
-# GsTvMGHXfgtg/cM9D8Svi/3vKt8gVTew4fbRknUPUbRupY5a4l4kgU4QpO4/cY5j
-# DhNLrddfRHnzNhQGivecRk5c/5CxGwcOkRX7uq+1UcKNJK4kxscnKqEpKBo6cSgC
-# PC6Ro8AlEeKcFEehemhor5unXCBc2XGxDI+7qPjFEmifz0DLQESlE/DmZAwlCEIy
-# sjaKJAL+L3J+HNdJRZboWR3p+nRka7LrZkPas7CM1ekN3fYBIM6ZMWM9CBoYs4Gb
-# T8aTEAb8B4H6i9r5gkn3Ym6hU/oSlBiFLpKR6mhsRDKyZqHnGKSaZFHvMIIFTzCC
-# BDegAwIBAgIQBP3jqtvdtaueQfTZ1SF1TjANBgkqhkiG9w0BAQsFADByMQswCQYD
-# VQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3d3cuZGln
-# aWNlcnQuY29tMTEwLwYDVQQDEyhEaWdpQ2VydCBTSEEyIEFzc3VyZWQgSUQgQ29k
-# ZSBTaWduaW5nIENBMB4XDTIwMDcyMDAwMDAwMFoXDTIzMDcyNTEyMDAwMFowgYsx
-# CzAJBgNVBAYTAkdCMRIwEAYDVQQHEwlXYWtlZmllbGQxJjAkBgNVBAoTHVNlY3Vy
-# ZSBQbGF0Zm9ybSBTb2x1dGlvbnMgTHRkMRgwFgYDVQQLEw9TY3JpcHRpbmdIZWF2
-# ZW4xJjAkBgNVBAMTHVNlY3VyZSBQbGF0Zm9ybSBTb2x1dGlvbnMgTHRkMIIBIjAN
-# BgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAr20nXdaAALva07XZykpRlijxfIPk
-# TUQFAxQgXTW2G5Jc1YQfIYjIePC6oaD+3Zc2WN2Jrsc7bj5Qe5Nj4QHHHf3jopLy
-# g8jXl7Emt1mlyzUrtygoQ1XpBBXnv70dvZibro6dXmK8/M37w5pEAj/69+AYM7IO
-# Fz2CrTIrQjvwjELSOkZ2o+z+iqfax9Z1Tv82+yg9iDHnUxZWhaiEXk9BFRv9WYsz
-# qTXQTEhv8fmUI2aZX48so4mJhNGu7Vp1TGeCik1G959Qk7sFh3yvRugjY0IIXBXu
-# A+LRT00yjkgMe8XoDdaBoIn5y3ZrQ7bCVDjoTrcn/SqfHvhEEMj1a1f0zQIDAQAB
-# o4IBxTCCAcEwHwYDVR0jBBgwFoAUWsS5eyoKo6XqcQPAYPkt9mV1DlgwHQYDVR0O
-# BBYEFE16ovlqIk5uX2JQy6og0OCPrsnJMA4GA1UdDwEB/wQEAwIHgDATBgNVHSUE
-# DDAKBggrBgEFBQcDAzB3BgNVHR8EcDBuMDWgM6Axhi9odHRwOi8vY3JsMy5kaWdp
-# Y2VydC5jb20vc2hhMi1hc3N1cmVkLWNzLWcxLmNybDA1oDOgMYYvaHR0cDovL2Ny
-# bDQuZGlnaWNlcnQuY29tL3NoYTItYXNzdXJlZC1jcy1nMS5jcmwwTAYDVR0gBEUw
-# QzA3BglghkgBhv1sAwEwKjAoBggrBgEFBQcCARYcaHR0cHM6Ly93d3cuZGlnaWNl
-# cnQuY29tL0NQUzAIBgZngQwBBAEwgYQGCCsGAQUFBwEBBHgwdjAkBggrBgEFBQcw
-# AYYYaHR0cDovL29jc3AuZGlnaWNlcnQuY29tME4GCCsGAQUFBzAChkJodHRwOi8v
-# Y2FjZXJ0cy5kaWdpY2VydC5jb20vRGlnaUNlcnRTSEEyQXNzdXJlZElEQ29kZVNp
-# Z25pbmdDQS5jcnQwDAYDVR0TAQH/BAIwADANBgkqhkiG9w0BAQsFAAOCAQEAU9zO
-# 9UpTkPL8DNrcbIaf1w736CgWB5KRQsmp1mhXbGECUCCpOCzlYFCSeiwH9MT0je3W
-# aYxWqIpUMvAI8ndFPVDp5RF+IJNifs+YuLBcSv1tilNY+kfa2OS20nFrbFfl9QbR
-# 4oacz8sBhhOXrYeUOU4sTHSPQjd3lpyhhZGNd3COvc2csk55JG/h2hR2fK+m4p7z
-# sszK+vfqEX9Ab/7gYMgSo65hhFMSWcvtNO325mAxHJYJ1k9XEUTmq828ZmfEeyMq
-# K9FlN5ykYJMWp/vK8w4c6WXbYCBXWL43jnPyKT4tpiOjWOI6g18JMdUxCG41Hawp
-# hH44QHzE1NPeC+1UjTGCAigwggIkAgEBMIGGMHIxCzAJBgNVBAYTAlVTMRUwEwYD
-# VQQKEwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5jb20xMTAv
-# BgNVBAMTKERpZ2lDZXJ0IFNIQTIgQXNzdXJlZCBJRCBDb2RlIFNpZ25pbmcgQ0EC
-# EAT946rb3bWrnkH02dUhdU4wCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwxCjAI
-# oAKAAKECgAAwGQYJKoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGCNwIB
-# CzEOMAwGCisGAQQBgjcCARUwIwYJKoZIhvcNAQkEMRYEFKwMGHwOSo3WHBKDMpOb
-# cWTDqb+RMA0GCSqGSIb3DQEBAQUABIIBAEXSPUixQII9rWvDZVBbBEBV8sedeOuZ
-# TshlZQ7B/mRW9RsaA3zdnRur/kxOcHpmIj/5miODWGAC/DJnczgitEiY2Q0BrmLQ
-# vjKRSshSEVGlNR0m/Bod981tc1/r3wf3/XPCPwdRtP3CyYPDpmeOL9ZWyduUg94K
-# mgofg+yAsO05PKHduruJeVMjlSVv+kTQqCi6+aDxL/alsfK8igH7aOk5ge4rt1W9
-# VRNBjrc+FI+OevHY8sl/HjFwFeLPhLkoCPYDuMe1pS6xi3xNMTUYO3JQ/Rdjym1M
-# Mn25XSQwQPmuHjECzpuobhkiAx2cq3PIZzMuCdJflrNgpf+2m/ZZjiQ=
-# SIG # End signature block
