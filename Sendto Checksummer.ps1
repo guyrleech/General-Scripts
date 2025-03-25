@@ -13,6 +13,7 @@
     05/12/20  GRL   Minimise PowerShell window if parent is explorer so sendto shortcut doesn't have to be minimised but Out-Gridview window will not be minimised as no easy way to restore grid view windows
     12/12/20  GRL   Fixed bug showing wrong file size
     04/06/24  GRL   Add window title so can tell it's summer. Set verbose on so PS window shows what's occurring
+    25/03/25  GRL   Output to stdout too for copy/paste
 #>
 
 $VerbosePreference = 'Continue'
@@ -172,7 +173,7 @@ if( [string]::IsNullOrEmpty( $algorithm ) )
         $_.Handled = $true
     })
 
-    Write-Verbose -Message "Showing GUI to select hash algorithm"
+    Write-Verbose -Message "Showing GUI to select hash algorithm - set environment variable CHECKSUM_ALGORITHM to always use that algorithm"
 
     if( $mainForm.ShowDialog() )
     {
@@ -180,7 +181,7 @@ if( [string]::IsNullOrEmpty( $algorithm ) )
     }
 }
 
-if( ! [string]::IsNullOrEmpty( $algorithm ) )
+if( -Not [string]::IsNullOrEmpty( $algorithm ) )
 {
     ## can't easily explicitly make out-gridview window foreground/restored so if parent is explorer.exe we'll hide the PowerShell window
 
@@ -246,6 +247,9 @@ if( ! [string]::IsNullOrEmpty( $algorithm ) )
 
     if( $results -and $results.Count )
     {
+        Write-Verbose -Message "$([datetime]::Now.ToString('G')): got $($results.Count) hashes"
+        ## also output results to calling window so easier to copy/paste
+        $results ## don't format in case truncates on wrap or similar and can then use in pipeline
         if( $selected = $results | Out-GridView -Title "$algorithm checksums of $($results.Count) files" -PassThru)
         {
             $selected | Set-Clipboard
