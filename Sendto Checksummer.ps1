@@ -14,6 +14,7 @@
     12/12/20  GRL   Fixed bug showing wrong file size
     04/06/24  GRL   Add window title so can tell it's summer. Set verbose on so PS window shows what's occurring
     25/03/25  GRL   Output to stdout too for copy/paste
+    02/05/25  GRL   Added jobs for parallelism
 #>
 
 $VerbosePreference = 'Continue'
@@ -46,6 +47,9 @@ $VerbosePreference = 'Continue'
 
 [string]$algorithm = 'MD5'
 
+## we pass this into a job
+
+$functionCode = @'
 Function Get-HashAndProperties
 {
     Param
@@ -86,6 +90,7 @@ Function Get-HashAndProperties
 
     [pscustomobject][ordered]@{ 'File' = $path ; "$algorithm checksum" = $hash ; "Size (MB)" = $size ; 'File Version' = $fileVersion ; 'Modified' = $modified }
 }
+'@
 
 Function Load-GUI( $inputXml )
 {
@@ -222,37 +227,61 @@ if( -Not [string]::IsNullOrEmpty( $algorithm ) )
         }
     }
 
-    [array]$results = @( $args | ForEach-Object `
+    [System.Collections.Generic.List[object]]$errors = @()
+
+    [array]$jobs = @( $args | ForEach-Object `
     {
         $item = $_
         try
         {
             if( Test-Path -Path $item -PathType Container -ErrorAction SilentlyContinue )
             {
-                Get-ChildItem -Path $item -File -Force -Recurse | ForEach-Object -Process `
+                Get-ChildItem -Path $item -File -Force -Recurse -PipelineVariable child | ForEach-Object -Process `
                 {
-                    Get-HashAndProperties -Path $_.FullName -Algorithm $algorithm -Properties $_
+                    Start-Job -ScriptBlock { Invoke-Expression -Command $using:functionCode ; Get-HashAndProperties -Path $using:child.FullName -Algorithm $using:algorithm -Properties $using:child }
                 }
+            }
+            elseif( Test-Path -Path $item -PathType Leaf -ErrorAction SilentlyContinue )
+            {
+                Start-Job -ScriptBlock { Invoke-Expression -Command $using:functionCode ; Get-HashAndProperties -path $using:item -algorithm $using:algorithm }
             }
             else
             {
-                Get-HashAndProperties -path $item -algorithm $algorithm
+                $errors.Add( [pscustomobject][ordered]@{ 'File' = $item; "$algorithm checksum" = 'Path not found' } )
             }
         }
         catch
         {
-            [pscustomobject][ordered]@{ 'File' = $item; "$algorithm checksum" = $_.ToString() }
+            $errors.Add( [pscustomobject][ordered]@{ 'File' = $item; "$algorithm checksum" = $_.ToString() } )
         }
     })
 
-    if( $results -and $results.Count )
+    if( $null -ne $jobs -and $jobs.Count -gt 0 )
     {
-        Write-Verbose -Message "$([datetime]::Now.ToString('G')): got $($results.Count) hashes"
-        ## also output results to calling window so easier to copy/paste
-        $results ## don't format in case truncates on wrap or similar and can then use in pipeline
-        if( $selected = $results | Out-GridView -Title "$algorithm checksums of $($results.Count) files" -PassThru)
+        Write-Verbose -Message "$([datetime]::Now.ToString('G')): waiting for $($jobs.Count) jobs"
+
+        $wait = Wait-Job -Job $jobs
+
+        [array]$results = @( Receive-Job -Job $jobs )
+        
+        Write-Verbose -Message "$([datetime]::Now.ToString('G')): got $($results.Count) results from $($jobs.Count) jobs"
+
+        $jobs | Remove-Job -Force -ErrorAction SilentlyContinue
+        $jobs = $null
+
+        if( $results -and $results.Count )
         {
-            $selected | Set-Clipboard
+            Write-Verbose -Message "$([datetime]::Now.ToString('G')): got $($results.Count) hashes"
+            ## also output results to calling window so easier to copy/paste
+            $results ## don't format in case truncates on wrap or similar and can then use in pipeline
+            if( $selected = $results | Select-Object -Property * -ExcludeProperty RunspaceId | Out-GridView -Title "$algorithm checksums of $($results.Count) files" -PassThru)
+            {
+                $selected | Set-Clipboard
+            }
         }
+    }
+    elseif( $errors.Count )
+    {
+        $errors | Out-GridView -Title "Checksum Errors"
     }
 }
