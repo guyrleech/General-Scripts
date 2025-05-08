@@ -45,6 +45,10 @@ If not specified, new marker items will be appended to the autosave file if it a
 
 Text to display in a popup when the countdown timer expires
 
+.PARAMETER noDate
+
+Do not display the date
+
 .PARAMETER markerFile
 
 A file to look for which will be then seen in a SysInternals Process Monitor trace as a CreateFile operation to allow cross referencing to that
@@ -118,6 +122,7 @@ Display a countdown timer starting at 3 minutes in a window but do not start it 
     @guyrleech 30/11/2020  Added -title argument
     @guyrleech 18/12/2020  Added code to stop and delete timer on exit
     @guyrleech 26/01/2022  Added autosave options, support for special folders and pseudo environment variables %day%, %month%, %monthname%, %dayname% , %year%
+    @guyrleech 03/05/2025  Added date & parameter to not show it
 #>
 
 [CmdletBinding()]
@@ -134,6 +139,7 @@ Param
     [string]$expiredMessage ,
     [string]$title ,
     [switch]$notOnTop ,
+    [switch]$noDate ,
     [switch]$tenths ,
     [int]$beep
 )
@@ -161,6 +167,8 @@ if( -Not $PSBoundParameters[ 'autosavefile' ] -and $PSBoundParameters[ 'noappend
         Title="Guy's Clock" Height="272.694" Width="636.432">
     <Grid>
         <TextBox x:Name="txtClock" HorizontalAlignment="Left" Height="111" Margin="24,29,0,0" TextWrapping="Wrap" Text="TextBox" VerticalAlignment="Top" Width="358" FontSize="72" IsReadOnly="True" FontWeight="Bold" BorderThickness="0"/>
+        <TextBox x:Name="txtDate"  HorizontalAlignment="Left" Height="30" Margin="24,10,0,0" TextWrapping="Wrap" Text="" VerticalAlignment="Top" Width="300" FontSize="16" IsReadOnly="True" FontWeight="Normal" BorderThickness="0"/>
+  
         <Grid Margin="24,200,244,10">
             <CheckBox x:Name="checkboxRun" Content="_Run" HorizontalAlignment="Left" Height="18" Margin="-11,5,0,0" VerticalAlignment="Top" Width="52" IsChecked="True"/>
             <Button x:Name="btnReset" Content="Re_set" HorizontalAlignment="Left" Height="23" Margin="112,-1,0,0" VerticalAlignment="Top" Width="72"/>
@@ -459,6 +467,7 @@ else
 
 [int]$countdownSeconds = 0
 [string]$global:lastfilename = $null
+[int]$script:previousDayOfYear = -1
 
 $WPFtxtClock.Text = $(if( $stopWatch )
     {
@@ -806,6 +815,8 @@ if( -Not [string]::IsNullOrEmpty( $autosaveFile ) )
     }
     if( $WPFcheckboxRun.IsChecked )
     {
+        $now = [datetime]::Now
+
         $newTime = $(if( $stopWatch )
         {
             '{0:d2}:{1:d2}:{2:d2}.{3:d1}' -f $timer.Elapsed.Hours , $timer.Elapsed.Minutes , $timer.Elapsed.Seconds, $( [int]$tenths = $timer.Elapsed.Milliseconds / 100 ; if( $tenths -ge 10 ) { 0 } else { $tenths } )
@@ -840,13 +851,23 @@ if( -Not [string]::IsNullOrEmpty( $autosaveFile ) )
         }
         else
         {
-            Get-Date -Format $dateFormat
+            $now.ToString( $dateFormat )
         })
         if( $newTime -ne $script:lastTime )
         {
             Write-Debug -Message "New time is $newTime, lasttime was $script:lasttime"
             $script:lastTime = $newTime
             $WPFtxtClock.Text = $newTime
+            if( -Not $noDate )
+            {
+                if( ( $script:previousDayOfYear -lt 0 -or $script:previousDayOfYear -ne $now.DayOfYear ) )
+                {
+                    ## https://ss64.com/ps/syntax-dateformats.html
+                    Write-Verbose "$($now.ToString('G')) date change"
+                    $wpftxtDate.Text = "$($now.ToString( 'dddd' ) ) $($now.ToString( 'D' ) )"
+                    $script:previousDayOfYear = $now.DayOfYear
+                }
+            }
         }
     }
 }
