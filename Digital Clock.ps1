@@ -129,7 +129,7 @@ Display a countdown timer starting at 3 minutes in a window but do not start it 
     @guyrleech 26/01/2022  Added autosave options, support for special folders and pseudo environment variables %day%, %month%, %monthname%, %dayname% , %year%
     @guyrleech 03/05/2025  Added date & parameter to not show it
     @guyrleech 04/10/2025  Added Hide/Show items
-    @guyrleech 08/05/2026  Added timezone parameter
+    @guyrleech 08/05/2026  Added timezone parameter and calculation of time difference
 #>
 
 [CmdletBinding()]
@@ -196,6 +196,7 @@ if( -Not $PSBoundParameters[ 'autosavefile' ] -and $PSBoundParameters[ 'noappend
                     <MenuItem Header="Save" Name="SaveContextMenu" />
                     <MenuItem Header="Insert Above" Name="InsertAboveContextMenu" />
                     <MenuItem Header="Insert Below" Name="InsertBelowContextMenu" />
+                    <MenuItem Header="Time Difference" Name="TimeDiffContextMenu" />
                     <Separator />
                     <MenuItem Header="Hide All Items" Name="ToggleItemsContextMenu" />
                 </ContextMenu>
@@ -819,6 +820,49 @@ $WPFInsertBelowContextMenu.Add_Click({
     Set-MarkerText -insert Below -selected $WPFlistMarkings.SelectedIndex
 })
 
+$WPFTimeDiffContextMenu.Add_Click({
+    $_.Handled = $true
+    if( $WPFlistMarkings.SelectedItems.Count -ne 2 )
+    {
+        [void][Windows.MessageBox]::Show( "Please select exactly 2 items to calculate the time difference" , 'Time Difference' , 'Ok' , 'Exclamation' )
+    }
+    else
+    {
+        $item1 = $WPFlistMarkings.SelectedItems[0]
+        $item2 = $WPFlistMarkings.SelectedItems[1]
+        [timespan]$diff    = [timespan]::Zero
+        [bool]$parsed      = $false
+        [datetime]$dt1     = [datetime]::MinValue
+        [datetime]$dt2     = [datetime]::MinValue
+        if( [datetime]::TryParse( $item1.Timestamp , [ref]$dt1 ) -and [datetime]::TryParse( $item2.Timestamp , [ref]$dt2 ) )
+        {
+            $diff   = $dt2 - $dt1
+            if( $diff -lt [timespan]::Zero ) { $diff = $diff.Negate() }
+            $parsed = $true
+        }
+        else
+        {
+            [timespan]$ts1 = [timespan]::Zero
+            [timespan]$ts2 = [timespan]::Zero
+            if( [timespan]::TryParse( $item1.Timestamp , [ref]$ts1 ) -and [timespan]::TryParse( $item2.Timestamp , [ref]$ts2 ) )
+            {
+                $diff   = $ts2 - $ts1
+                if( $diff -lt [timespan]::Zero ) { $diff = $diff.Negate() }
+                $parsed = $true
+            }
+        }
+        if( $parsed )
+        {
+            [string]$diffText = '{0:d2}:{1:d2}:{2:d2}.{3:d3}' -f [int][math]::Floor( $diff.TotalHours ) , $diff.Minutes , $diff.Seconds , $diff.Milliseconds
+            [void][Windows.MessageBox]::Show( $diffText , 'Time Difference' , 'Ok' , 'Information' )
+        }
+        else
+        {
+            [void][Windows.MessageBox]::Show( "Unable to parse timestamps:`n  $($item1.Timestamp)`n  $($item2.Timestamp)" , 'Time Difference' , 'Ok' , 'Exclamation' )
+        }
+    }
+})
+
 $WPFDeleteContextMenu.Add_Click({
     $_.Handled = $true
     [array]$removals = @( ForEach( $item  in $WPFlistMarkings.SelectedItems )
@@ -1038,10 +1082,10 @@ if( $WPFlistMarkings.Items -and $WPFlistMarkings.Items.Count )
 }
 
 # SIG # Begin signature block
-# MIIkkwYJKoZIhvcNAQcCoIIkhDCCJIACAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
+# MIIkkQYJKoZIhvcNAQcCoIIkgjCCJH4CAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUpcp+qQbMccL2CdMAgRNeYIIs
-# W9Cggh9gMIIFfTCCA2WgAwIBAgIQAdazdTZfIM2RHdcv5fmTZDANBgkqhkiG9w0B
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUTZIZU7LgpuAoqZO5/c6Pm6hB
+# AmOggh9gMIIFfTCCA2WgAwIBAgIQAdazdTZfIM2RHdcv5fmTZDANBgkqhkiG9w0B
 # AQsFADBaMQswCQYDVQQGEwJMVjEZMBcGA1UEChMQRW5WZXJzIEdyb3VwIFNJQTEw
 # MC4GA1UEAxMnR29HZXRTU0wgRzQgQ1MgUlNBNDA5NiBTSEEyNTYgMjAyMiBDQS0x
 # MB4XDTI1MDcyMTAwMDAwMFoXDTI2MDcyMDIzNTk1OVowcTELMAkGA1UEBhMCR0Ix
@@ -1208,30 +1252,30 @@ if( $WPFlistMarkings.Items -and $WPFlistMarkings.Items.Count )
 # 2Yv7roancJIFcbojBcxlRcGG0LIhp6GvReQGgMgYxQbV1S3CrWqZzBt1R9xJgKf4
 # 7CdxVRd/ndUlQ05oxYy2zRWVFjF7mcr4C34Mj3ocCVccAvlKV9jEnstrniLvUxxV
 # ZE/rptb7IRE2lskKPIJgbaP5t2nGj/ULLi49xTcBZU8atufk+EMF/cWuiC7POGT7
-# 5qaL6vdCvHlshtjdNXOCIUjsarfNZzGCBJ0wggSZAgEBMG4wWjELMAkGA1UEBhMC
+# 5qaL6vdCvHlshtjdNXOCIUjsarfNZzGCBJswggSXAgEBMG4wWjELMAkGA1UEBhMC
 # TFYxGTAXBgNVBAoTEEVuVmVycyBHcm91cCBTSUExMDAuBgNVBAMTJ0dvR2V0U1NM
 # IEc0IENTIFJTQTQwOTYgU0hBMjU2IDIwMjIgQ0EtMQIQAdazdTZfIM2RHdcv5fmT
 # ZDAJBgUrDgMCGgUAoHgwGAYKKwYBBAGCNwIBDDEKMAigAoAAoQKAADAZBgkqhkiG
 # 9w0BCQMxDAYKKwYBBAGCNwIBBDAcBgorBgEEAYI3AgELMQ4wDAYKKwYBBAGCNwIB
-# FTAjBgkqhkiG9w0BCQQxFgQUFeswNDmgRwe+MxT9vsqkZEs5OfEwCwYHKoZIzj0C
-# AQUABGgwZgIxAIzTuNlf+4takl99xAsD6KGECs5BxZLTh9vARxmRkotO5lRPEn9W
-# Tgd529C4hHn6LwIxAMCng9900RnEHQE4VysVTe4yWDVsgCJksc/jR4X8ADpQFK05
-# GMKvJrzaAV/1Q5qaIqGCAyYwggMiBgkqhkiG9w0BCQYxggMTMIIDDwIBATB9MGkx
-# CzAJBgNVBAYTAlVTMRcwFQYDVQQKEw5EaWdpQ2VydCwgSW5jLjFBMD8GA1UEAxM4
-# RGlnaUNlcnQgVHJ1c3RlZCBHNCBUaW1lU3RhbXBpbmcgUlNBNDA5NiBTSEEyNTYg
-# MjAyNSBDQTECEAqA7xhLjfEFgtHEdqeVdGgwDQYJYIZIAWUDBAIBBQCgaTAYBgkq
-# hkiG9w0BCQMxCwYJKoZIhvcNAQcBMBwGCSqGSIb3DQEJBTEPFw0yNjA1MDgxNzA3
-# MTVaMC8GCSqGSIb3DQEJBDEiBCDswOsqT18YpkvFJ1TS4iwddUHsyyjtcXViUih8
-# 5y3vZDANBgkqhkiG9w0BAQEFAASCAgC/e4vLGK6Df8SKcjCkEIl9DLPZCnO643GC
-# lD5nFQbLGJlO4QIzi65krplwli0M2ucs/ZJ+5UF2jvev4pVQyGlHaafG07fhTHM1
-# 9Q8Q9b7NHzSMGjP9rlxLltbeI34Vo7QZDWDF/Fhs7CfHDZJ3OkRuCXFpAXpDqbfR
-# T/axCR4UBwVo2oji7Z+OSXOtNCRZuCEYfrovMxpT7KehcVEuddgj2bCoO8gONv62
-# +xiG9oZQgLc6IsUUqsHtQ9x/VXSW2gaIUgSU+DeWvOTK7gG1cTUCTZk8T/cyF+tF
-# QPQt1B1Y7TgWQButiQ7FGbKpDOFf0VchGUcaW27s7gcfFhTX9sfJE0LMJB5kx6dk
-# mTQeLsml9S1DOrTDGe0huez43gsBRkb7R3tmsmDGh4y5L8QOIz/79LXLYCeACslX
-# 1yQVumkE96kWxmzkRo1ZGddZpwqx9PBQ+zYtGofjC3CfHif4JnzFrnl13HcznSIq
-# /Z/Y33jUV0ZQr4yb4occLlmaJVpQhUHwhvhLf/y7mmAudnUIsl692WxdU7pkz5sB
-# i7rmbwOUK/y8dSZq1Sesw17ebCfvsCrhcyHDmL/1Kt3HURN6Neha604mKI4SwKoe
-# H49TZJpajxdCEPW/w5i9ZNcy+75aKL3DFnCV8vu/vGu/OxRbX7YTIXzy9MbuRJQx
-# ES1jVJrxgw==
+# FTAjBgkqhkiG9w0BCQQxFgQUoo3w7KjjjxEBHZ5wZIyIU3iAIKswCwYHKoZIzj0C
+# AQUABGYwZAIwDxs8/dBASE4XoEw0aBd7+hFZfUcBQBYdpD2xCvPhM6veSF90r9y6
+# mOgQWCThzm+GAjB5qFGf6u3lT/pfOEzrY2dA+nlr/5K85aAHRhtMAPrYEjyPOoJ+
+# g/gqF2hnli3zfTShggMmMIIDIgYJKoZIhvcNAQkGMYIDEzCCAw8CAQEwfTBpMQsw
+# CQYDVQQGEwJVUzEXMBUGA1UEChMORGlnaUNlcnQsIEluYy4xQTA/BgNVBAMTOERp
+# Z2lDZXJ0IFRydXN0ZWQgRzQgVGltZVN0YW1waW5nIFJTQTQwOTYgU0hBMjU2IDIw
+# MjUgQ0ExAhAKgO8YS43xBYLRxHanlXRoMA0GCWCGSAFlAwQCAQUAoGkwGAYJKoZI
+# hvcNAQkDMQsGCSqGSIb3DQEHATAcBgkqhkiG9w0BCQUxDxcNMjYwNTA4MTcxOTU0
+# WjAvBgkqhkiG9w0BCQQxIgQgrL6Onlc7Z6zqu6ADJw2ueAd/nzruJQWNW/+Mk3m1
+# o+owDQYJKoZIhvcNAQEBBQAEggIAzsGdN3Wo8sdsjCrr7ZyXyD1E711GOFvwhjMN
+# IZ0byncfVKNuW7YFCI2sgYONpUL1MPy2MYX33fb6naArtvKyRA/m1vN/oYvFPksh
+# EAKGeWCAqhho0muBwlFkfkl2wdo7DGTDeVv3vksKTHQ1+JZf1xnRViw7rYexFP/k
+# 1PEI4R8tbEkbfckI+y97tMbLpSk+cEJ3lmbac1qCa2wP1Dr7sTaOwwpskxIMqFVA
+# xVjqhvlXXeUW/SR10TREZ3KEOSPVFYkb1zSLuvD6V8Y3JwLrqakSixtbHzlFMjyL
+# LviJkyH3csi0SnmTnUvE8adipvssm1b+r/GC8nxssE+7sIm9XDQ/z1Qc2W4o0t+P
+# UpG5QuPrNvzvcJgV+WpbhHZ74k0XHLcThFKbtG1qj4h3qT+fF9DxeWWvTcRH3O2a
+# H69eSevyOy2oFG8c+OEKuvxSAL2fZZIfA6kgE0e8eqaSfUwBJ9p6Fzm31MbZIVq3
+# Ne958CnFXUSYkj7f8Rp4zRTXUAxMANEF/eI2BWIy1JKFDmTGzC2CKXhFFG1d3cr7
+# waNQBNt+AVXB0B4sJKhafASq3CdC+QRhDI7oqorXdB0S6ogY6+Bpdhwx8538yIWv
+# 9K1d0Wj8wpGLUmUOXRT4GPiMsy0zRAnBLOBIoYXvI1FXxBWj4vwidav2IHko+kMs
+# TO9S/K4=
 # SIG # End signature block
